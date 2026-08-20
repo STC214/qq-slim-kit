@@ -1,0 +1,29 @@
+QQ瘦身独立模块 v1.4 verification record
+Date: 2026-08-20 Asia/Shanghai
+
+Changed field: SlimUi ListView divider
+Baseline: setDivider(null) with no rendered inter-item divider.
+Modified: setDivider(new ColorDrawable(Color.TRANSPARENT)); setDividerHeight(2).
+Expected behavior: exactly 2 physical pixels of transparent separation between adjacent item cards.
+
+Build output: package=local.qqslim.module; versionCode=5; versionName=1.4-item-gap
+Signature output: Verifies; APK Signature Scheme v3=true; exit=0
+APK SHA256: DF5C1336C82578F43E255C2A59931DC00D45BCD160524C6074DAB9257AEE58BA
+
+Device install commands:
+adb -s 54084396 install -r artifacts\qq-slim-standalone-v1.4.apk
+adb -s 54084396 shell cmd package install-existing --user 999 local.qqslim.module
+Literal output: Success; Package local.qqslim.module installed for user: 999
+Exit status: 0
+Device package result: versionCode=5; versionName=1.4-item-gap; User 0 installed=true; User 999 installed=true
+
+Patch reopen command: git apply --check --whitespace=error --directory=build/qqslim-v14-patchcheck artifacts\qq-slim-standalone-v1.4-source.patch
+Literal output: patch_check_exit=0
+
+Rollback command: powershell -ExecutionPolicy Bypass -File artifacts\rollback-qq-slim-v1.4.ps1 -Serial 54084396
+Literal output: Success; rollback=OK; restored=1.3-media-path-fix; users=0,999; versionName=1.3-media-path-fix
+Exit status: 0
+
+Final restore command: adb -s 54084396 install -r artifacts\qq-slim-standalone-v1.4.apk; adb -s 54084396 shell cmd package install-existing --user 999 local.qqslim.module
+Literal output: Success; Package local.qqslim.module installed for user: 999; versionCode=5; versionName=1.4-item-gap
+Exit status: 0

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="local.qqslim.module" android:versionCode="5" android:versionName="1.4-item-gap">
+    <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="35" />
+    <queries>
+        <package android:name="com.tencent.mobileqq" />
+        <package android:name="org.lsposed.manager" />
+    </queries>
+    <application android:label="QQ瘦身独立模块" android:allowBackup="false" android:supportsRtl="true">
+        <meta-data android:name="xposedmodule" android:value="true" />
+        <meta-data android:name="xposedscope" android:value="com.tencent.mobileqq" />
+        <meta-data android:name="xposeddescription" android:value="独立QQ瘦身：缓存扫描、逐项清理、主应用与双开实例隔离" />
+        <meta-data android:name="xposedminversion" android:value="93" />
+        <activity android:name=".MainActivity" android:exported="true"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

@@ -1,0 +1,395 @@
+diff --git a/qq-slim-module/AndroidManifest.xml b/qq-slim-module/AndroidManifest.xml
+new file mode 100644
+--- /dev/null
++++ b/qq-slim-module/AndroidManifest.xml
+@@ -0,0 +1,22 @@
++<?xml version="1.0" encoding="utf-8"?>
++<manifest xmlns:android="http://schemas.android.com/apk/res/android"
++    package="local.qqslim.module" android:versionCode="5" android:versionName="1.4-item-gap">
++    <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="35" />
++    <queries>
++        <package android:name="com.tencent.mobileqq" />
++        <package android:name="org.lsposed.manager" />
++    </queries>
++    <application android:label="QQ瘦身独立模块" android:allowBackup="false" android:supportsRtl="true">
++        <meta-data android:name="xposedmodule" android:value="true" />
++        <meta-data android:name="xposedscope" android:value="com.tencent.mobileqq" />
++        <meta-data android:name="xposeddescription" android:value="独立QQ瘦身：缓存扫描、逐项清理、主应用与双开实例隔离" />
++        <meta-data android:name="xposedminversion" android:value="93" />
++        <activity android:name=".MainActivity" android:exported="true"
++            android:theme="@android:style/Theme.Material.Light.NoActionBar">
++            <intent-filter>
++                <action android:name="android.intent.action.MAIN" />
++                <category android:name="android.intent.category.LAUNCHER" />
++            </intent-filter>
++        </activity>
++    </application>
++</manifest>
+diff --git a/qq-slim-module/assets/xposed_init b/qq-slim-module/assets/xposed_init
+new file mode 100644
+--- /dev/null
++++ b/qq-slim-module/assets/xposed_init
+@@ -0,0 +1,1 @@
++local.qqslim.module.SlimEntry
+diff --git a/qq-slim-module/META-INF/xposed/scope.list b/qq-slim-module/META-INF/xposed/scope.list
+new file mode 100644
+--- /dev/null
++++ b/qq-slim-module/META-INF/xposed/scope.list
+@@ -0,0 +1,1 @@
++com.tencent.mobileqq
+diff --git a/qq-slim-module/README.md b/qq-slim-module/README.md
+new file mode 100644
+--- /dev/null
++++ b/qq-slim-module/README.md
+@@ -0,0 +1,10 @@
++# QQ瘦身独立模块
++
++- 独立包名：`local.qqslim.module`
++- Xposed 入口：`local.qqslim.module.SlimEntry`
++- 默认作用域：`com.tencent.mobileqq`
++- 功能入口：QQ 设置列表顶部的“QQ瘦身”
++- 功能页面：69 项原模块目录规则、异步容量扫描、按容量排序、逐项确认清理
++- 双开隔离：每个 QQ 进程使用自己的 UID、`ApplicationInfo.dataDir` 和用户外部存储根目录；日志输出 user、UID、内部/外部路径。
++
++独立模块不会加载或调度原模块 APK。桌面入口仅提供状态和导航，实际功能界面在 QQ 内打开。
+diff --git a/qq-slim-module/src/local/qqslim/module/MainActivity.java b/qq-slim-module/src/local/qqslim/module/MainActivity.java
+new file mode 100644
+--- /dev/null
++++ b/qq-slim-module/src/local/qqslim/module/MainActivity.java
+@@ -0,0 +1,24 @@
++package local.qqslim.module;
++
++import android.app.Activity;
++import android.content.Intent;
++import android.graphics.Color;
++import android.net.Uri;
++import android.os.Bundle;
++import android.provider.Settings;
++import android.view.View;
++import android.widget.Button;
++import android.widget.LinearLayout;
++import android.widget.TextView;
++import android.widget.Toast;
++
++public final class MainActivity extends Activity{
++    @Override protected void onCreate(Bundle b){super.onCreate(b);setTitle("QQ瘦身独立模块");setContentView(content());}
++    private View content(){LinearLayout x=new LinearLayout(this);x.setOrientation(LinearLayout.VERTICAL);x.setPadding(dp(24),dp(30),dp(24),dp(20));x.setBackgroundColor(Color.rgb(246,248,252));
++        x.addView(text("QQ瘦身独立模块",27,Color.rgb(20,40,70)));x.addView(text("v1.0-standalone · 69项原始目录规则",14,Color.DKGRAY));
++        x.addView(text("此页面只负责状态与导航。\n\n功能入口：QQ → 设置 → QQ瘦身\n\n双开：在 LSPosed 作用域中同时勾选主实例和双开实例。模块在每个实例进程内根据 userId、UID、dataDir 和用户外部存储分别扫描，互不共用目录。",16,Color.rgb(25,55,90)));
++        x.addView(button("打开 QQ",v->open("com.tencent.mobileqq")));x.addView(button("打开 LSPosed",v->open("org.lsposed.manager")));x.addView(button("应用详情",v->startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:"+getPackageName())))));return x;}
++    private void open(String p){Intent i=getPackageManager().getLaunchIntentForPackage(p);if(i==null)Toast.makeText(this,"未检测到 "+p,Toast.LENGTH_SHORT).show();else startActivity(i);}
++    private Button button(String s,View.OnClickListener l){Button b=new Button(this);b.setText(s);b.setAllCaps(false);b.setOnClickListener(l);LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,dp(54));p.topMargin=dp(12);b.setLayoutParams(p);return b;}
++    private TextView text(String s,int z,int c){TextView v=new TextView(this);v.setText(s);v.setTextSize(z);v.setTextColor(c);v.setPadding(0,0,0,dp(18));return v;}private int dp(int n){return Math.round(n*getResources().getDisplayMetrics().density);}
++}
+diff --git a/qq-slim-module/src/local/qqslim/module/SettingsInjector.java b/qq-slim-module/src/local/qqslim/module/SettingsInjector.java
+new file mode 100644
+--- /dev/null
++++ b/qq-slim-module/src/local/qqslim/module/SettingsInjector.java
+@@ -0,0 +1,113 @@
++package local.qqslim.module;
++
++import android.content.Context;
++import android.util.Log;
++import de.robv.android.xposed.XC_MethodHook;
++import de.robv.android.xposed.XposedBridge;
++import java.lang.reflect.Constructor;
++import java.lang.reflect.Method;
++import java.lang.reflect.Proxy;
++import java.lang.reflect.Field;
++import java.lang.reflect.Modifier;
++import java.util.ArrayList;
++import java.util.Collections;
++import java.util.Comparator;
++import java.util.List;
++import java.util.Set;
++import java.util.WeakHashMap;
++
++final class SettingsInjector {
++    private static final int ENTRY_ID=0x51534c49;
++    private static final Set<Object> DECORATED=Collections.newSetFromMap(new WeakHashMap<Object,Boolean>());
++    static void install(final ClassLoader host,final String instance,final String dataDir){
++        int count=0;
++        for(String name:new String[]{"com.tencent.mobileqq.setting.main.MainSettingConfigProvider","com.tencent.mobileqq.setting.main.NewSettingConfigProvider","com.tencent.mobileqq.setting.main.b"}){
++            try{
++                Class<?> type=Class.forName(name,false,host);
++                for(Method method:type.getDeclaredMethods()){
++                    Class<?>[] a=method.getParameterTypes();
++                    if(List.class.isAssignableFrom(method.getReturnType())&&a.length==1&&Context.class.isAssignableFrom(a[0])){
++                        method.setAccessible(true);
++                        XposedBridge.hookMethod(method,new XC_MethodHook(60){
++                            @Override protected void afterHookedMethod(MethodHookParam p){
++                                try{decorate((Context)p.args[0],p.getResult(),host,dataDir,name);}
++                                catch(Throwable t){Log.e(SlimEntry.TAG,"settings insertion failed; instance="+instance,t);}
++                            }
++                        });
++                        count++;
++                    }
++                }
++            }catch(ClassNotFoundException ignored){}catch(Throwable t){Log.e(SlimEntry.TAG,"provider hook failed: "+name,t);}
++        }
++        Log.i(SlimEntry.TAG,"settings providers hooked="+count+"; instance="+instance);
++    }
++
++    @SuppressWarnings({"rawtypes","unchecked"})
++    private static void decorate(final Context context,Object result,ClassLoader host,String dataDir,String providerName)throws Throwable{
++        if(!(result instanceof List))return;
++        List sections=(List)result;
++        if(sections.isEmpty())return;
++        synchronized(DECORATED){if(!DECORATED.add(result))return;}
++        Class<?> base=null;
++        for(String n:new String[]{"com.tencent.mobileqq.setting.main.processor.AccountSecurityItemProcessor","com.tencent.mobileqq.setting.main.processor.AboutItemProcessor"}){
++            try{base=Class.forName(n,false,host).getSuperclass();break;}catch(ClassNotFoundException ignored){}
++        }
++        if(base==null)throw new IllegalStateException("setting processor base missing");
++        ArrayList<Class<?>> candidates=new ArrayList<>();
++        for(String n:new String[]{"com.tencent.mobileqq.setting.processor.g","com.tencent.mobileqq.setting.processor.h","com.tencent.mobileqq.setting.processor.i","com.tencent.mobileqq.setting.processor.j","as3.i"}){
++            try{Class<?> c=Class.forName(n,false,host);if(c.getSuperclass()==base)candidates.add(c);}catch(ClassNotFoundException ignored){}
++        }
++        if(candidates.size()!=1)throw new IllegalStateException("simple processor candidates="+candidates);
++        Class<?> pc=candidates.get(0);
++        ArrayList<Method> setters=new ArrayList<>();
++        for(Method m:pc.getDeclaredMethods()){
++            Class<?>[] p=m.getParameterTypes();
++            if(m.getReturnType()==Void.TYPE&&p.length==1&&"kotlin.jvm.functions.Function0".equals(p[0].getName()))setters.add(m);
++        }
++        setters.sort(Comparator.comparing(Method::getName));
++        if(setters.isEmpty()||setters.size()>2)throw new IllegalStateException("callback setters="+setters);
++        Method setter=setters.get(0);setter.setAccessible(true);
++        Constructor<?> ctor;boolean five;
++        try{ctor=pc.getDeclaredConstructor(Context.class,int.class,CharSequence.class,int.class,String.class);five=true;}
++        catch(NoSuchMethodException e){ctor=pc.getDeclaredConstructor(Context.class,int.class,CharSequence.class,int.class);five=false;}
++        ctor.setAccessible(true);
++        int icon=context.getResources().getIdentifier("qui_tuning","drawable",context.getPackageName());
++        Object processor=five?ctor.newInstance(context,ENTRY_ID,"QQ瘦身",icon,null):ctor.newInstance(context,ENTRY_ID,"QQ瘦身",icon);
++        final Class<?> function0=setter.getParameterTypes()[0];
++        final Object unit=function0.getClassLoader().loadClass("kotlin.Unit").getField("INSTANCE").get(null);
++        Object callback=Proxy.newProxyInstance(host,new Class[]{function0},(proxy,m,args)->{
++            if("invoke".equals(m.getName())){SlimUi.show(context,dataDir);return unit;}
++            if("toString".equals(m.getName()))return "QQSlimClick";
++            if("hashCode".equals(m.getName()))return System.identityHashCode(proxy);
++            if("equals".equals(m.getName()))return proxy==args[0];
++            return null;
++        });
++        setter.invoke(processor,callback);
++        Class<?> sc=sections.get(0).getClass();Constructor<?> sctor;boolean extended;
++        try{sctor=sc.getDeclaredConstructor(List.class,CharSequence.class,CharSequence.class);extended=false;}
++        catch(NoSuchMethodException e){sctor=sc.getDeclaredConstructor(List.class,CharSequence.class,CharSequence.class,int.class,host.loadClass("kotlin.jvm.internal.DefaultConstructorMarker"));extended=true;}
++        sctor.setAccessible(true);ArrayList<Object> one=new ArrayList<>(1);one.add(processor);
++        Object slimSection=extended?sctor.newInstance(one,"","",6,null):sctor.newInstance(one,"","");
++
++        // QA's current SettingEntryHook inserts its section at 1 (old provider) or 2 (new provider).
++        // Locate the real QAuxiliary section when present, otherwise use that exact reference slot + 1.
++        int qa=-1;
++        for(int i=0;i<sections.size();i++)if(deepContains(sections.get(i),"QAuxiliary",5,new java.util.IdentityHashMap<Object,Boolean>())){qa=i;break;}
++        int qaReference=providerName.contains("NewSettingConfigProvider")?2:1;
++        int insert=qa>=0?qa+1:Math.min(qaReference+1,sections.size());
++        sections.add(insert,slimSection);
++        Log.i(SlimEntry.TAG,"QQ瘦身 entry inserted; placement=section["+insert+"]; qaSection="+qa+"; provider="+providerName+"; uid="+android.os.Process.myUid()+"; user="+(android.os.Process.myUid()/100000)+"; dataDir="+dataDir);
++    }
++
++    private static boolean deepContains(Object value,String needle,int depth,java.util.IdentityHashMap<Object,Boolean> seen){
++        if(value==null||depth<0||seen.put(value,Boolean.TRUE)!=null)return false;
++        if(value instanceof CharSequence)return value.toString().contains(needle);
++        if(value instanceof Iterable){for(Object x:(Iterable<?>)value)if(deepContains(x,needle,depth-1,seen))return true;return false;}
++        Class<?> c=value.getClass();if(c.isPrimitive()||c.isEnum()||c.getName().startsWith("java.lang."))return false;
++        for(Class<?> k=c;k!=null&&k!=Object.class;k=k.getSuperclass())for(Field f:k.getDeclaredFields()){
++            if(Modifier.isStatic(f.getModifiers()))continue;
++            try{f.setAccessible(true);if(deepContains(f.get(value),needle,depth-1,seen))return true;}catch(Throwable ignored){}
++        }
++        return false;
++    }
++}
+diff --git a/qq-slim-module/src/local/qqslim/module/SlimCatalog.java b/qq-slim-module/src/local/qqslim/module/SlimCatalog.java
+new file mode 100644
+--- /dev/null
++++ b/qq-slim-module/src/local/qqslim/module/SlimCatalog.java
+@@ -0,0 +1,73 @@
++package local.qqslim.module;
++
++import android.content.Context;
++import android.os.Environment;
++import java.io.File;
++import java.util.ArrayList;
++import java.util.Collections;
++import java.util.Comparator;
++import java.util.List;
++
++/** Directory catalogue copied from the original QQ瘦身 preset table. */
++final class SlimCatalog {
++    static final class Item {
++        final String name,template; final File path; long bytes=-1;
++        Item(String n,String t,File p){name=n;template=t;path=p;}
++    }
++    private static final String[] NAMES={
++        "默认内部缓存","X5 WebView缓存","JSON卡片缓存","已下载的小程序","pddata缓存1","气泡/礼物/VIP素材",
++        "默认外部缓存","AE素材缓存","TBS日志","TBS缓存","OneLog日志","OpenSDK临时文件","小世界缓存1","小世界缓存2","QQ秀下载","QQ钱包缓存","腾讯日志","地图缓存","视频编辑缓存","Zootopia下载","空间缓存",
++        "音频缓存","小程序外部缓存","收藏缓存","接收文件缩略图","QQ图片","短视频广告","微信小程序缓存","Apollo素材","名片素材","表情素材","字体特效","字体信息","挂件素材","资料卡素材","群特效","戳一戳素材","当前帐号语音消息",
++        "长截图缓存","聊天图片","图片磁盘缓存","头像缓存","热图缓存","pddata缓存2","照片缓存","涂鸦缓存","短视频缓存","缩略图缓存","群游戏卡片","群相册","Lottie素材","智图缓存","聊天图片（兼容项）","新名片缓存","QQ音乐缓存","群临时文件","频道临时文件","接收临时文件","NT接收数据",
++        "MMKV缓存","TIM下载缓存","动态库缓存1","动态库缓存2","QQ表情资源","QQ动态库","Emoji缓存","模块图片缓存","模块视频缓存","模块崩溃日志"
++    };
++    private static final String[] PATHS={
++        "G/cache","G/app_x5webview/Cache","G/files/ArkApp/","G/files/mini","G/files/pddata","G/files/files/vas_material_folder",
++        "P/cache","P/files/ae","P/files/commonlog","P/files/tbs","P/files/onelog","P/files/opensdk_tmp","P/files/qcircle","P/qcircle","P/files/QQShowDownload","P/files/QWallet","P/files/tencent/","P/files/tencentmapsdk","P/files/video","P/files/zootopia_download","P/qzone",
++        "P/Tencent/audio","P/Tencent/mini","P/Tencent/QQ_Favorite","P/files/QQfile_recv/.thumbnails","P/Tencent/QQ_Images","P/Tencent/QQ_Shortvideos","P/Tencent/wxminiapp","P/Tencent/MobileQQ/.apollo","P/Tencent/MobileQQ/.card","P/Tencent/MobileQQ/.emotionsm","P/Tencent/MobileQQ/.font_effect","P/Tencent/MobileQQ/.font_info","P/Tencent/MobileQQ/.pendant","P/Tencent/MobileQQ/.profilecard","P/Tencent/MobileQQ/.troop","P/Tencent/MobileQQ/.vaspoke","P/Tencent/MobileQQ/{{Q}}/ptt",
++        "P/Tencent/MobileQQ/aio_long_shot","P/Tencent/MobileQQ/chatpic","P/Tencent/MobileQQ/diskcache","P/Tencent/MobileQQ/head","P/Tencent/MobileQQ/hotpic","P/Tencent/MobileQQ/pddata","P/Tencent/MobileQQ/photo","P/Tencent/MobileQQ/Scribble","P/Tencent/MobileQQ/shortvideo","P/Tencent/MobileQQ/thumb","P/Tencent/MobileQQ/troopgamecard","P/Tencent/MobileQQ/troopphoto","P/Tencent/MobileQQ/vas","P/Tencent/MobileQQ/zhitu","P/Tencent/MobileQQ/chatpic","P/Tencent/MobileQQ/newCard","P/Tencent/MobileQQ/qqmusic","P/Tencent/QQfile_recv/.trooptmp","P/Tencent/QQfile_recv/.guildtmp","P/Tencent/QQfile_recv/.tmp","P/Tencent/QQfile_recv/nt_data",
++        "G/files/mmkv","G/files/tim","G/app_lib","G/app_libs","G/files/qq_emoticon_res","G/files/qqso","G/files/emoji","P/Serendipity/picCache","P/Serendipity/video","P/Serendipity/CrashReport"
++    };
++    static List<Item> resolve(Context context,String dataDir){
++        File internal=new File(dataDir);
++        // Environment is user-aware inside a user-0/user-999 host process.
++        File external=externalRoot(context);
++        ArrayList<Item> out=new ArrayList<>();
++        for(int i=0;i<PATHS.length;i++){
++            String t=PATHS[i];
++            if(t.contains("{{Q}}")){
++                File accounts=new File(external,"Tencent/MobileQQ");
++                File[] children=accounts.listFiles();boolean found=false;
++                if(children!=null)for(File f:children)if(f.isDirectory()&&f.getName().matches("[0-9]{5,12}")){
++                    addSafe(out,NAMES[i]+" ("+f.getName()+")",t.replace("{{Q}}",f.getName()),internal,external);found=true;
++                }
++                if(!found)addSafe(out,NAMES[i]+"（未发现帐号目录）",t.replace("{{Q}}","ACCOUNT"),internal,external);
++            }else addSafe(out,NAMES[i],t,internal,external);
++        }
++        return out;
++    }
++    /** Original HookEnv.getqqgen equivalent: QQ's per-user external app-data root. */
++    static File externalRoot(Context context){
++        File cache=context.getExternalCacheDir();
++        if(cache!=null&&cache.getParentFile()!=null)return cache.getParentFile();
++        return new File(Environment.getExternalStorageDirectory(),"Android/data/"+context.getPackageName());
++    }
++    private static void addSafe(List<Item> out,String n,String t,File internal,File external){
++        File root=t.charAt(0)=='G'?internal:external;
++        String rel=t.substring(1);while(rel.startsWith("/"))rel=rel.substring(1);
++        out.add(new Item(n,t,new File(root,rel)));
++    }
++    static long size(File f){
++        if(f==null||!f.exists())return 0;
++        if(f.isFile())return f.length();long total=0;File[] a=f.listFiles();
++        if(a!=null)for(File x:a)total+=size(x);return total;
++    }
++    static boolean delete(File f,File internal,File external){
++        try{
++            String p=f.getCanonicalPath(),g=internal.getCanonicalPath(),e=external.getCanonicalPath();
++            if(!(p.startsWith(g+File.separator)||p.startsWith(e+File.separator)))return false;
++            if(f.isDirectory()){File[] a=f.listFiles();if(a!=null)for(File x:a)if(!delete(x,internal,external))return false;}
++            return !f.exists()||f.delete();
++        }catch(Exception ignored){return false;}
++    }
++}
+diff --git a/qq-slim-module/src/local/qqslim/module/SlimEntry.java b/qq-slim-module/src/local/qqslim/module/SlimEntry.java
+new file mode 100644
+--- /dev/null
++++ b/qq-slim-module/src/local/qqslim/module/SlimEntry.java
+@@ -0,0 +1,27 @@
++package local.qqslim.module;
++
++import android.util.Log;
++import de.robv.android.xposed.IXposedHookLoadPackage;
++import de.robv.android.xposed.callbacks.XC_LoadPackage;
++import java.util.Set;
++import java.util.concurrent.ConcurrentHashMap;
++
++/** Sole Xposed entry. Each Android user receives a distinct app dataDir and UID. */
++public final class SlimEntry implements IXposedHookLoadPackage {
++    static final String TAG="QQSlim";
++    private static final Set<String> INSTALLED=ConcurrentHashMap.newKeySet();
++    @Override public void handleLoadPackage(XC_LoadPackage.LoadPackageParam p){
++        if(!"com.tencent.mobileqq".equals(p.packageName)||p.appInfo==null)return;
++        String main=p.appInfo.processName==null?p.packageName:p.appInfo.processName;
++        if(!main.equals(p.processName))return;
++        String instance=p.appInfo.uid+"|"+p.appInfo.dataDir+"|"+p.processName;
++        if(!INSTALLED.add(instance))return;
++        try{
++            SettingsInjector.install(p.classLoader,instance,p.appInfo.dataDir);
++            Log.i(TAG,"standalone loaded; instance="+instance+"; user="+(android.os.Process.myUid()/100000)+"; presets=69");
++        }catch(Throwable t){
++            INSTALLED.remove(instance);
++            Log.e(TAG,"standalone startup failed; instance="+instance,t);
++        }
++    }
++}
+diff --git a/qq-slim-module/src/local/qqslim/module/SlimUi.java b/qq-slim-module/src/local/qqslim/module/SlimUi.java
+new file mode 100644
+--- /dev/null
++++ b/qq-slim-module/src/local/qqslim/module/SlimUi.java
+@@ -0,0 +1,79 @@
++package local.qqslim.module;
++
++import android.app.AlertDialog;
++import android.app.Dialog;
++import android.content.Context;
++import android.content.res.Configuration;
++import android.graphics.Color;
++import android.graphics.Typeface;
++import android.graphics.drawable.GradientDrawable;
++import android.graphics.drawable.ColorDrawable;
++import android.os.Environment;
++import android.os.Handler;
++import android.os.Looper;
++import android.util.Log;
++import android.view.Gravity;
++import android.view.View;
++import android.view.ViewGroup;
++import android.view.Window;
++import android.view.WindowManager;
++import android.widget.BaseAdapter;
++import android.widget.Button;
++import android.widget.LinearLayout;
++import android.widget.ListView;
++import android.widget.TextView;
++import android.widget.Toast;
++import java.io.File;
++import java.text.DecimalFormat;
++import java.util.Collections;
++import java.util.Comparator;
++import java.util.List;
++import java.util.concurrent.ExecutorService;
++import java.util.concurrent.Executors;
++
++final class SlimUi {
++    private static final ExecutorService IO=Executors.newSingleThreadExecutor();
++    static void show(Context c,String dataDir){
++        final Palette p=Palette.from(c);
++        final List<SlimCatalog.Item> items=SlimCatalog.resolve(c,dataDir);
++        LinearLayout root=new LinearLayout(c);root.setOrientation(LinearLayout.VERTICAL);root.setBackgroundColor(p.page);
++        LinearLayout bar=new LinearLayout(c);bar.setGravity(Gravity.CENTER);bar.setBackgroundColor(p.card);bar.setElevation(dp(c,4));
++        TextView pageTitle=text(c,"QQ 瘦身",18,p.primary);pageTitle.setTypeface(Typeface.DEFAULT,Typeface.BOLD);bar.addView(pageTitle,new LinearLayout.LayoutParams(-2,dp(c,40)));root.addView(bar,new LinearLayout.LayoutParams(-1,dp(c,40)));
++        ListView list=new ListView(c);list.setPadding(dp(c,12),dp(c,12),dp(c,12),dp(c,20));list.setClipToPadding(false);list.setDivider(new ColorDrawable(Color.TRANSPARENT));list.setDividerHeight(2);list.setOverScrollMode(View.OVER_SCROLL_NEVER);list.setVerticalScrollBarEnabled(false);
++        final SlimAdapter adapter=new SlimAdapter(c,items,dataDir,p);list.setAdapter(adapter);root.addView(list,new LinearLayout.LayoutParams(-1,0,1));
++        Dialog dialog=new Dialog(c,p.dark?android.R.style.Theme_Material_NoActionBar:android.R.style.Theme_Material_Light_NoActionBar);dialog.setContentView(root);dialog.show();
++        Window window=dialog.getWindow();if(window!=null){window.setLayout(WindowManager.LayoutParams.MATCH_PARENT,WindowManager.LayoutParams.MATCH_PARENT);window.setStatusBarColor(p.card);window.setNavigationBarColor(p.card);window.getDecorView().setSystemUiVisibility(p.dark?0:(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR|View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR));}
++        Log.i(SlimEntry.TAG,"slim page shown; theme="+(p.dark?"dark":"light")+"; user="+userId()+"; uid="+android.os.Process.myUid()+"; internal="+dataDir+"; externalAppRoot="+SlimCatalog.externalRoot(c)+"; rows="+items.size());
++        Handler main=new Handler(Looper.getMainLooper());
++        IO.execute(()->{
++            long total=0;int found=0,nonZero=0;StringBuilder media=new StringBuilder();for(SlimCatalog.Item i:items){i.bytes=SlimCatalog.size(i.path);total+=i.bytes;if(i.path.exists())found++;if(i.bytes>0)nonZero++;if((i.template.contains("chatpic")||i.template.contains("diskcache")||i.template.contains("photo")||i.template.contains("shortvideo"))&&i.bytes>0)media.append(i.name).append('=').append(i.bytes).append(';');}final int foundCount=found,nonZeroCount=nonZero;final String mediaResult=media.toString();
++            Collections.sort(items,(a,b)->Long.compare(b.bytes,a.bytes));final long sum=total;
++            main.post(()->{adapter.notifyDataSetChanged();Log.i(SlimEntry.TAG,"scan complete; user="+userId()+"; bytes="+sum+"; rows="+items.size()+"; found="+foundCount+"; nonZero="+nonZeroCount+"; media="+mediaResult);});
++        });
++    }
++    private static final class SlimAdapter extends BaseAdapter{
++        final Context c;final List<SlimCatalog.Item> data;final File internal,external;final Palette palette;final Handler main=new Handler(Looper.getMainLooper());
++        SlimAdapter(Context c,List<SlimCatalog.Item> d,String dir,Palette p){this.c=c;data=d;internal=new File(dir);external=SlimCatalog.externalRoot(c);palette=p;}
++        public int getCount(){return data.size();}public Object getItem(int p){return data.get(p);}public long getItemId(int p){return p;}
++        public View getView(int pos,View old,ViewGroup parent){
++            SlimCatalog.Item item=data.get(pos);LinearLayout card=new LinearLayout(c);card.setOrientation(LinearLayout.VERTICAL);card.setPadding(dp(c,16),dp(c,16),dp(c,16),dp(c,16));card.setBackground(roundRect(palette.card,dp(c,12)));
++            LinearLayout row=new LinearLayout(c);row.setOrientation(LinearLayout.HORIZONTAL);row.setGravity(Gravity.CENTER_VERTICAL);
++            LinearLayout words=new LinearLayout(c);words.setOrientation(LinearLayout.VERTICAL);
++            TextView title=text(c,item.name,16,palette.primary);title.setTypeface(Typeface.DEFAULT,Typeface.BOLD);title.setSingleLine(true);
++            TextView size=text(c,item.bytes<0?"正在计算…":format(item.bytes),13,palette.secondary);LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(-1,-2);sp.topMargin=dp(c,2);words.addView(title);words.addView(size,sp);row.addView(words,new LinearLayout.LayoutParams(0,-2,1));
++            TextView clean=text(c,"清理",14,Color.rgb(239,68,68));clean.setTypeface(Typeface.DEFAULT,Typeface.BOLD);clean.setGravity(Gravity.CENTER);clean.setPadding(dp(c,14),dp(c,6),dp(c,14),dp(c,6));clean.setEnabled(item.path.exists());clean.setOnClickListener(v->confirm(item));LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(-2,-2);cp.leftMargin=dp(c,12);row.addView(clean,cp);card.addView(row);return card;
++        }
++        void confirm(SlimCatalog.Item item){new AlertDialog.Builder(c).setTitle("清理“"+item.name+"”").setMessage(item.path.getAbsolutePath()+"\n\n将递归删除此缓存目录。")
++            .setNegativeButton("取消",null).setPositiveButton("清理",(d,w)->IO.execute(()->{boolean ok=SlimCatalog.delete(item.path,internal,external);item.bytes=SlimCatalog.size(item.path);main.post(()->{notifyDataSetChanged();Toast.makeText(c,ok?"清理完成":"清理失败，请查看日志",Toast.LENGTH_SHORT).show();Log.i(SlimEntry.TAG,"clean result="+ok+"; user="+userId()+"; path="+item.path);});})).show();}
++    }
++    private static TextView text(Context c,String s,int z,int color){TextView v=new TextView(c);v.setText(s);v.setTextSize(z);v.setTextColor(color);return v;}
++    private static GradientDrawable roundRect(int color,int radius){GradientDrawable d=new GradientDrawable();d.setColor(color);d.setCornerRadius(radius);return d;}
++    private static final class Palette{
++        final boolean dark;final int page,card,primary,secondary;
++        Palette(boolean d,int p,int c,int a,int b){dark=d;page=p;card=c;primary=a;secondary=b;}
++        static Palette from(Context c){boolean d=(c.getResources().getConfiguration().uiMode&Configuration.UI_MODE_NIGHT_MASK)==Configuration.UI_MODE_NIGHT_YES;return d?new Palette(true,Color.rgb(17,24,39),Color.rgb(31,41,55),Color.rgb(249,250,251),Color.rgb(156,163,175)):new Palette(false,Color.rgb(229,231,235),Color.WHITE,Color.rgb(31,41,55),Color.rgb(156,163,175));}
++    }
++    private static int dp(Context c,int x){return Math.round(x*c.getResources().getDisplayMetrics().density);}
++    private static int userId(){return android.os.Process.myUid()/100000;}
++    private static String format(long n){DecimalFormat f=new DecimalFormat("0.##");if(n>=1073741824)return f.format(n/1073741824d)+" GB";if(n>=1048576)return f.format(n/1048576d)+" MB";if(n>=1024)return f.format(n/1024d)+" KB";return n+" B";}
++}
