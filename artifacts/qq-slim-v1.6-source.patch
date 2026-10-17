@@ -1,0 +1,1881 @@
+--- /dev/null
++++ b/.gitattributes
+@@ -0,0 +1,11 @@
++* text=auto
++.gitattributes text eol=lf
++.gitignore text eol=lf
++*.java text eol=lf
++*.py text eol=lf
++*.xml text eol=lf
++*.md text eol=lf
++*.ps1 text eol=crlf
++*.png binary
++*.apk binary
++*.patch -text
+--- a/.gitignore
++++ b/.gitignore
+@@ -29,8 +29,15 @@
+ *.jar
+ *.log
+ *.tmp
++*.new
+ __pycache__/
+ *.py[cod]
+ 
+ # Unrelated local device helper
+ /rollback-cx-network.ps1
++
++# Raw tool transcripts are local; the curated review report is kept in Git.
++/artifacts/review/*.txt
++/artifacts/review/*.json
++/artifacts/review/*.png
++/artifacts/review/*.xml
+--- a/README.md
++++ b/README.md
+@@ -22,7 +22,7 @@
+ 
+ ## 清理范围
+ 
+-模块包含 69 项缓存目录规则，主要覆盖：
++模块沿用 69 项目录规则，合并重复路径；多帐号语音目录会展开为多行。重要数据目录仅显示容量，不开放清理。主要覆盖：
+ 
+ - 聊天图片、照片与缩略图
+ - 图片磁盘缓存
+@@ -44,17 +44,38 @@
+ 
+ ## 注意事项
+ 
+-- “清理”会递归删除对应缓存目录，请先确认条目名称。
+-- 清理后的图片、语音或视频可能在再次查看时重新下载。
++- “清理”会删除所选目录内的文件和子目录，保留所选目录本身，请先确认条目名称。
++- MMKV、动态库、收藏、语音、相册、钱包等重要目录为“仅查看”；底层清理入口也会校验规则和目标路径。
++- 清理后的本地图片或视频副本可能丢失；仅服务器仍保留的内容才有机会重新下载。
++- 清理不是事务操作：QQ 可能继续写入缓存；取消、权限变化或文件变化可能使清理只完成一部分。模块不备份已清理文件。
++- 遇到链接、特殊文件、权限异常或超出遍历限制时停止相应操作。设备若缺少安全目录流支持，相关项目显示扫描失败，清理停止。
+ - QQ 更新后可能调整缓存目录；若某一项目长期显示为 0，需要重新核对当前版本的实际存储路径。
+ - 模块仅处理缓存目录，不处理聊天数据库、帐号资料或登录凭据。
+ 
+ ## 构建信息
+ 
+ - 包名：`local.qqslim.module`
+-- 当前版本：`1.4-item-gap`
++- 当前版本：`1.6-reviewed`（versionCode 7）
+ - 最低 Android 版本：Android 9（API 28）
+ - 默认作用域：`com.tencent.mobileqq`
++
++## 构建与验证
++
++需要 Windows PowerShell、JDK 17/21、Android SDK Platform 35 / Build Tools 35.0.0，以及用于测试的 Python 3。
++
++```powershell
++$env:ANDROID_HOME = '你的 Android SDK 路径'
++powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build.ps1
++# 以下测试仅对显式选定的模拟器运行，测试包与测试目录均独立于 QQ：
++python scripts/test.py --serial emulator-5580
++python scripts/test-ui.py --serial emulator-5580
++```
++
++- 默认 APK：`artifacts/qq-slim-standalone-v1.6.apk`。
++- 首次构建从 Xposed 官方仓库获取 API 82 编译依赖，并核对 SHA-256；依赖仅参与编译，不打入模块 APK。
++- 本地开发签名保存在 `.local/debug.keystore`，请自行备份。与本次 v1.5 签名相同，与早期 v1.4 签名不同；签名不同的安装包不能直接覆盖升级。
++- 源码、图标资源、测试与脚本纳入版本管理；SDK、密钥、构建缓存、APK 和原始测试日志由 `.gitignore` 排除。忽略规则不删除磁盘文件。
++- 本轮审查记录：`artifacts/review/REVIEW-v1.6.md`。Android 模拟器测试不代表特定 QQ/LSPosed 版本已适配，实机入口和双开隔离仍应单独验收。
+ 
+ ## 致谢
+ 
+--- a/qq-slim-module/AndroidManifest.xml
++++ b/qq-slim-module/AndroidManifest.xml
+@@ -1,22 +1,22 @@
+-<?xml version="1.0" encoding="utf-8"?>
+-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+-    package="local.qqslim.module" android:versionCode="6" android:versionName="1.5-reviewed">
+-    <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="35" />
+-    <queries>
+-        <package android:name="com.tencent.mobileqq" />
+-        <package android:name="org.lsposed.manager" />
+-    </queries>
+-    <application android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher" android:label="QQ瘦身独立模块" android:allowBackup="false" android:supportsRtl="true">
+-        <meta-data android:name="xposedmodule" android:value="true" />
+-        <meta-data android:name="xposedscope" android:value="com.tencent.mobileqq" />
+-        <meta-data android:name="xposeddescription" android:value="独立QQ瘦身：缓存扫描、逐项清理、主应用与双开实例隔离" />
+-        <meta-data android:name="xposedminversion" android:value="93" />
+-        <activity android:name=".MainActivity" android:exported="true"
+-            android:theme="@android:style/Theme.Material.Light.NoActionBar">
+-            <intent-filter>
+-                <action android:name="android.intent.action.MAIN" />
+-                <category android:name="android.intent.category.LAUNCHER" />
+-            </intent-filter>
+-        </activity>
+-    </application>
+-</manifest>
++<?xml version="1.0" encoding="utf-8"?>
++<manifest xmlns:android="http://schemas.android.com/apk/res/android"
++    package="local.qqslim.module" android:versionCode="7" android:versionName="1.6-reviewed">
++    <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="35" />
++    <queries>
++        <package android:name="com.tencent.mobileqq" />
++        <package android:name="org.lsposed.manager" />
++    </queries>
++    <application android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher" android:label="QQ瘦身独立模块" android:allowBackup="false" android:supportsRtl="true">
++        <meta-data android:name="xposedmodule" android:value="true" />
++        <meta-data android:name="xposedscope" android:value="com.tencent.mobileqq" />
++        <meta-data android:name="xposeddescription" android:value="独立QQ瘦身：缓存扫描、逐项清理、主应用与双开实例隔离" />
++        <meta-data android:name="xposedminversion" android:value="93" />
++        <activity android:name=".MainActivity" android:exported="true"
++            android:theme="@android:style/Theme.Material.Light.NoActionBar">
++            <intent-filter>
++                <action android:name="android.intent.action.MAIN" />
++                <category android:name="android.intent.category.LAUNCHER" />
++            </intent-filter>
++        </activity>
++    </application>
++</manifest>
+--- a/qq-slim-module/README.md
++++ b/qq-slim-module/README.md
+@@ -4,7 +4,10 @@
+ - Xposed 入口：`local.qqslim.module.SlimEntry`
+ - 默认作用域：`com.tencent.mobileqq`
+ - 功能入口：QQ 设置列表顶部的“QQ瘦身”
+-- 功能页面：69 项原模块目录规则、异步容量扫描、按容量排序、逐项确认清理
+-- 双开隔离：每个 QQ 进程使用自己的 UID、`ApplicationInfo.dataDir` 和用户外部存储根目录；日志输出 user、UID、内部/外部路径。
++- 当前版本：1.6-reviewed（versionCode 7），保留替换后的多密度与自适应图标。
++- 功能页面：69 项规则、重复路径合并、异步容量扫描、容量排序、逐项确认清理，重要数据仅查看。
++- 双开隔离：每个 QQ 进程使用自己的 UID、`ApplicationInfo.dataDir` 和用户外部存储根目录。此设计仍需目标实机验收。
++- 清理保留所选目录、检查底层规则，并使用相对目录句柄与 NOFOLLOW 遍历；清理中断可能留下部分已删除数据。
++- 页面销毁会取消任务、清除待处理回调并注销生命周期监听器。
+ 
+ 独立模块不会加载或调度原模块 APK。桌面入口仅提供状态和导航，实际功能界面在 QQ 内打开。
+--- a/qq-slim-module/res/mipmap-anydpi-v26/ic_launcher.xml
++++ b/qq-slim-module/res/mipmap-anydpi-v26/ic_launcher.xml
+@@ -1,5 +1,5 @@
+-<?xml version="1.0" encoding="utf-8"?>
+-<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+-    <background android:drawable="@android:color/white" />
+-    <foreground android:drawable="@mipmap/ic_launcher_foreground" />
+-</adaptive-icon>
++<?xml version="1.0" encoding="utf-8"?>
++<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
++    <background android:drawable="@android:color/white" />
++    <foreground android:drawable="@mipmap/ic_launcher_foreground" />
++</adaptive-icon>
+--- a/qq-slim-module/src/local/qqslim/module/FileOps.java
++++ b/qq-slim-module/src/local/qqslim/module/FileOps.java
+@@ -3,75 +3,124 @@
+ import java.io.File;
+ import java.io.IOException;
+ import java.nio.file.DirectoryStream;
++import java.nio.file.NoSuchFileException;
++import java.nio.file.Path;
+ import java.nio.file.Files;
+ import java.nio.file.LinkOption;
+-import java.nio.file.Path;
++import java.nio.file.SecureDirectoryStream;
+ import java.nio.file.attribute.BasicFileAttributes;
++import java.nio.file.attribute.BasicFileAttributeView;
++import java.util.ArrayList;
++import java.util.List;
+ 
+-/** No-follow traversal. Fail closed on links, unreadable trees and excessive depth. */
++/** Trusted root aliases are resolved once; all descendants use fd-relative no-follow I/O. */
+ final class FileOps {
+-    private static final int MAX_DEPTH = 128;
++    private static final int MAX_DEPTH=128;
++    private static final int MAX_ENTRIES=1_000_000;
+ 
+-    static long size(File file) throws IOException {
+-        return size(file.toPath().toAbsolutePath().normalize(), 0);
++    private static final class Budget {
++        int entries;
++        void check(int depth) throws IOException {
++            if(Thread.currentThread().isInterrupted())throw new IOException("Cancelled");
++            if(depth>MAX_DEPTH||++entries>MAX_ENTRIES)throw new IOException("Traversal limit");
++        }
+     }
+ 
+-    private static long size(Path path, int depth) throws IOException {
+-        check(path, depth);
+-        if (!Files.exists(path, LinkOption.NOFOLLOW_LINKS)) return 0;
+-        BasicFileAttributes a = Files.readAttributes(path, BasicFileAttributes.class,
+-                LinkOption.NOFOLLOW_LINKS);
+-        if (a.isRegularFile()) return a.size();
+-        if (!a.isDirectory()) throw new IOException("Not a regular directory/file: " + path);
+-        long total = 0;
+-        try (DirectoryStream<Path> children = Files.newDirectoryStream(path)) {
+-            for (Path child : children) {
+-                long bytes = size(child, depth + 1);
+-                if (Long.MAX_VALUE - total < bytes) throw new IOException("Size overflow");
+-                total += bytes;
++    private static final class Anchor implements AutoCloseable {
++        final List<DirectoryStream<Path>> opened=new ArrayList<>();
++        SecureDirectoryStream<Path> selected;
++        @Override public void close() throws IOException {
++            IOException failure=null;
++            for(int i=opened.size()-1;i>=0;i--)try{opened.get(i).close();}catch(IOException e){failure=e;}
++            if(failure!=null)throw failure;
++        }
++    }
++
++    private static Anchor open(File file,File internal,File external) throws IOException {
++        Path path=file.toPath().toAbsolutePath().normalize();
++        Path g=internal.toPath().toAbsolutePath().normalize();
++        Path e=external.toPath().toAbsolutePath().normalize();
++        Path root=path.startsWith(g)?g:e;
++        if(path.equals(root)||!path.startsWith(root))throw new IOException("Outside cache roots");
++        Path relative=root.relativize(path);
++        if(relative.getNameCount()>MAX_DEPTH)throw new IOException("Directory depth limit");
++        Anchor anchor=new Anchor();
++        try {
++            // /sdcard and /data/user/0 may be trusted Android aliases. Descendants are not.
++            DirectoryStream<Path> stream=Files.newDirectoryStream(root.toRealPath());
++            anchor.opened.add(stream);
++            if(!(stream instanceof SecureDirectoryStream))throw new IOException("Secure directory I/O unsupported");
++            anchor.selected=(SecureDirectoryStream<Path>)stream;
++            for(Path part:relative){
++                if(Thread.currentThread().isInterrupted())throw new IOException("Cancelled");
++                anchor.selected=anchor.selected.newDirectoryStream(part,LinkOption.NOFOLLOW_LINKS);
++                anchor.opened.add(anchor.selected);
+             }
++            return anchor;
++        } catch(IOException|RuntimeException ex){
++            try{anchor.close();}catch(IOException suppressed){ex.addSuppressed(suppressed);}
++            throw ex;
++        }
++    }
++
++    static long size(File file,File internal,File external) throws IOException {
++        Anchor anchor;
++        try{anchor=open(file,internal,external);}catch(NoSuchFileException absent){return 0;}
++        try(Anchor opened=anchor){return scan(opened.selected,0,new Budget());}
++    }
++
++    private static BasicFileAttributes attributes(SecureDirectoryStream<Path> dir,Path name) throws IOException {
++        BasicFileAttributeView view=dir.getFileAttributeView(name,BasicFileAttributeView.class,LinkOption.NOFOLLOW_LINKS);
++        if(view==null)throw new IOException("Missing attribute view");
++        BasicFileAttributes a=view.readAttributes();
++        if(a.isSymbolicLink()||(!a.isDirectory()&&!a.isRegularFile()))throw new IOException("Link or special file");
++        return a;
++    }
++
++    private static long scan(SecureDirectoryStream<Path> dir,int depth,Budget budget) throws IOException {
++        budget.check(depth);long total=0;
++        for(Path entry:dir){
++            budget.check(depth);Path name=entry.getFileName();
++            BasicFileAttributes a=attributes(dir,name);
++            long bytes;
++            if(a.isDirectory()){
++                try(SecureDirectoryStream<Path> child=dir.newDirectoryStream(name,LinkOption.NOFOLLOW_LINKS)){
++                    bytes=scan(child,depth+1,budget);
++                }
++            }else bytes=a.size();
++            if(bytes<0||Long.MAX_VALUE-total<bytes)throw new IOException("Size overflow");
++            total+=bytes;
+         }
+         return total;
+     }
+ 
+-    static boolean clear(File file, File internal, File external) {
+-        try {
+-            Path path = file.toPath().toAbsolutePath().normalize();
+-            Path g = internal.toPath().toRealPath();
+-            Path e = external.toPath().toAbsolutePath().normalize();
+-            if (Files.exists(e, LinkOption.NOFOLLOW_LINKS)) e = e.toRealPath();
+-            Path root = path.startsWith(g) ? g : e;
+-            if (path.equals(root) || !path.startsWith(root)) return false;
+-            // Preflight the entire tree before removing anything. The selected root is kept.
+-            check(path, 0);
+-            if (!Files.exists(path, LinkOption.NOFOLLOW_LINKS)) return true;
+-            size(path, 0);
+-            if (!Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS)) return false;
+-            clearChildren(path, 0);
++    static boolean clear(File file,File internal,File external){
++        Anchor anchor;
++        try{anchor=open(file,internal,external);}
++        catch(NoSuchFileException absent){return true;}
++        catch(IOException|RuntimeException error){return false;}
++        try(Anchor opened=anchor){
++            // Preflight before the first deletion; a second stream avoids reusing an iterator.
++            scan(opened.selected,0,new Budget());
++            Path dot=file.toPath().getFileSystem().getPath(".");
++            try(SecureDirectoryStream<Path> fresh=opened.selected.newDirectoryStream(dot,LinkOption.NOFOLLOW_LINKS)){
++                clearChildren(fresh,0,new Budget());
++            }
+             return true;
+-        } catch (IOException | SecurityException e) {
+-            return false;
+-        }
++        }catch(IOException|RuntimeException error){return false;}
+     }
+ 
+-    private static void clearChildren(Path path, int depth) throws IOException {
+-        check(path, depth);
+-        try (DirectoryStream<Path> children = Files.newDirectoryStream(path)) {
+-            for (Path child : children) {
+-                check(child, depth + 1);
+-                if (Files.isDirectory(child, LinkOption.NOFOLLOW_LINKS)) {
+-                    clearChildren(child, depth + 1);
++    private static void clearChildren(SecureDirectoryStream<Path> dir,int depth,Budget budget) throws IOException {
++        budget.check(depth);
++        for(Path entry:dir){
++            budget.check(depth);Path name=entry.getFileName();
++            BasicFileAttributes a=attributes(dir,name);
++            if(a.isDirectory()){
++                try(SecureDirectoryStream<Path> child=dir.newDirectoryStream(name,LinkOption.NOFOLLOW_LINKS)){
++                    clearChildren(child,depth+1,budget);
+                 }
+-                Files.deleteIfExists(child);
+-            }
+-        }
+-    }
+-
+-    private static void check(Path path, int depth) throws IOException {
+-        if (Thread.currentThread().isInterrupted()) throw new IOException("Cancelled");
+-        if (depth > MAX_DEPTH) throw new IOException("Directory depth limit");
+-        for (Path p = path; p != null; p = p.getParent()) {
+-            if (Files.isSymbolicLink(p)) throw new IOException("Symbolic link: " + p);
++                dir.deleteDirectory(name);
++            }else dir.deleteFile(name);
+         }
+     }
+ }
+--- a/qq-slim-module/src/local/qqslim/module/MainActivity.java
++++ b/qq-slim-module/src/local/qqslim/module/MainActivity.java
+@@ -1,25 +1,33 @@
+-package local.qqslim.module;
+-
+-import android.app.Activity;
+-import android.content.Intent;
+-import android.graphics.Color;
+-import android.net.Uri;
+-import android.os.Bundle;
+-import android.provider.Settings;
+-import android.view.View;
+-import android.widget.Button;
+-import android.widget.LinearLayout;
+-import android.widget.TextView;
+-import android.widget.Toast;
+-
+-public final class MainActivity extends Activity{
+-    @Override protected void onCreate(Bundle b){super.onCreate(b);setTitle("QQ瘦身独立模块");setContentView(content());}
+-    private View content(){LinearLayout x=new LinearLayout(this);x.setOrientation(LinearLayout.VERTICAL);x.setPadding(dp(24),dp(30),dp(24),dp(20));x.setBackgroundColor(Color.rgb(246,248,252));
+-        x.addView(text("QQ瘦身独立模块",27,Color.rgb(20,40,70)));x.addView(text("v1.5-reviewed · 69项规则（重叠合并、重要数据仅查看）",14,Color.DKGRAY));
+-        x.addView(text("此页面只负责状态与导航。\n\n功能入口：QQ → 设置 → QQ瘦身\n\n双开：在 LSPosed 作用域中同时勾选主实例和双开实例。模块在每个实例进程内根据 userId、UID、dataDir 和用户外部存储分别扫描，互不共用目录。",16,Color.rgb(25,55,90)));
+-        x.addView(button("打开 QQ",v->open("com.tencent.mobileqq")));x.addView(button("打开 LSPosed",v->open("org.lsposed.manager")));x.addView(button("应用详情",v->openDetails()));return x;}
+-    private void open(String p){Intent i=getPackageManager().getLaunchIntentForPackage(p);if(i==null)Toast.makeText(this,"未检测到 "+p,Toast.LENGTH_SHORT).show();else try{startActivity(i);}catch(android.content.ActivityNotFoundException|SecurityException e){Toast.makeText(this,"应用启动失败",Toast.LENGTH_SHORT).show();}}
+-    private void openDetails(){try{startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,Uri.parse("package:"+getPackageName())));}catch(android.content.ActivityNotFoundException|SecurityException e){Toast.makeText(this,"应用详情启动失败",Toast.LENGTH_SHORT).show();}}
+-    private Button button(String s,View.OnClickListener l){Button b=new Button(this);b.setText(s);b.setAllCaps(false);b.setOnClickListener(l);LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,dp(54));p.topMargin=dp(12);b.setLayoutParams(p);return b;}
+-    private TextView text(String s,int z,int c){TextView v=new TextView(this);v.setText(s);v.setTextSize(z);v.setTextColor(c);v.setPadding(0,0,0,dp(18));return v;}private int dp(int n){return Math.round(n*getResources().getDisplayMetrics().density);}
+-}
++package local.qqslim.module;
++
++import android.app.Activity;
++import android.content.Intent;
++import android.graphics.Color;
++import android.net.Uri;
++import android.os.Bundle;
++import android.provider.Settings;
++import android.view.View;
++import android.widget.Button;
++import android.widget.LinearLayout;
++import android.widget.TextView;
++import android.widget.Toast;
++import android.widget.ScrollView;
++
++public final class MainActivity extends Activity{
++    private boolean dark;
++    @Override protected void onCreate(Bundle b){
++        dark=(getResources().getConfiguration().uiMode&android.content.res.Configuration.UI_MODE_NIGHT_MASK)==android.content.res.Configuration.UI_MODE_NIGHT_YES;
++        setTheme(dark?android.R.style.Theme_Material_NoActionBar:android.R.style.Theme_Material_Light_NoActionBar);
++        super.onCreate(b);setTitle("QQ瘦身独立模块");
++        ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.addView(content());setContentView(scroll);WindowStyle.apply(getWindow(),scroll,dark);
++    }
++    private View content(){LinearLayout x=new LinearLayout(this);x.setOrientation(LinearLayout.VERTICAL);x.setPadding(dp(24),dp(30),dp(24),dp(20));x.setBackgroundColor(dark?Color.rgb(17,24,39):Color.rgb(246,248,252));
++        x.addView(text("QQ瘦身独立模块",27,Color.rgb(20,40,70)));x.addView(text(version()+" · 69项规则（重叠合并、重要数据仅查看）",14,Color.DKGRAY));
++        x.addView(text("此页面只负责状态与导航。\n\n功能入口：QQ → 设置 → QQ瘦身\n\n双开：在 LSPosed 作用域中同时勾选主实例和双开实例。模块在每个实例进程内根据 userId、UID、dataDir 和用户外部存储分别扫描，互不共用目录。",16,Color.rgb(25,55,90)));
++        x.addView(button("打开 QQ",v->open("com.tencent.mobileqq")));x.addView(button("打开 LSPosed",v->open("org.lsposed.manager")));x.addView(button("应用详情",v->openDetails()));return x;}
++    private void open(String p){try{Intent i=getPackageManager().getLaunchIntentForPackage(p);if(i==null)Toast.makeText(this,"未检测到 "+p,Toast.LENGTH_SHORT).show();else startActivity(i);}catch(android.content.ActivityNotFoundException|SecurityException e){Toast.makeText(this,"应用启动失败",Toast.LENGTH_SHORT).show();}}
++    private void openDetails(){try{startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,Uri.parse("package:"+getPackageName())));}catch(android.content.ActivityNotFoundException|SecurityException e){Toast.makeText(this,"应用详情启动失败",Toast.LENGTH_SHORT).show();}}
++    private String version(){try{return "v"+getPackageManager().getPackageInfo(getPackageName(),0).versionName;}catch(android.content.pm.PackageManager.NameNotFoundException e){return "版本未知";}}
++    private Button button(String s,View.OnClickListener l){Button b=new Button(this);b.setText(s);b.setAllCaps(false);b.setOnClickListener(l);LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,dp(54));p.topMargin=dp(12);b.setLayoutParams(p);return b;}
++    private TextView text(String s,int z,int c){TextView v=new TextView(this);v.setText(s);v.setTextSize(z);v.setTextColor(dark?(z==14?Color.rgb(156,163,175):Color.rgb(249,250,251)):c);v.setPadding(0,0,0,dp(18));return v;}private int dp(int n){return Math.round(n*getResources().getDisplayMetrics().density);}
++}
+--- a/qq-slim-module/src/local/qqslim/module/SettingsInjector.java
++++ b/qq-slim-module/src/local/qqslim/module/SettingsInjector.java
+@@ -1,122 +1,123 @@
+-package local.qqslim.module;
+-
+-import android.content.Context;
+-import android.util.Log;
+-import de.robv.android.xposed.XC_MethodHook;
+-import de.robv.android.xposed.XposedBridge;
+-import java.lang.reflect.Constructor;
+-import java.lang.reflect.Method;
+-import java.lang.reflect.Proxy;
+-import java.lang.reflect.Field;
+-import java.lang.reflect.Modifier;
+-import java.util.ArrayList;
+-import java.util.Collections;
+-import java.util.Comparator;
+-import java.util.List;
+-import java.util.Set;
+-import java.util.WeakHashMap;
+-
+-final class SettingsInjector {
+-    private static final int ENTRY_ID=0x51534c49;
+-    private static final List<java.lang.ref.WeakReference<Object>> DECORATED=new ArrayList<>();
+-    private static boolean decorated(Object value){
+-        synchronized(DECORATED){
+-            java.util.Iterator<java.lang.ref.WeakReference<Object>> it=DECORATED.iterator();
+-            while(it.hasNext()){Object x=it.next().get();if(x==null)it.remove();else if(x==value)return true;}
+-            return false;
+-        }
+-    }
+-    static void install(final ClassLoader host,final String instance,final String dataDir){
+-        int count=0;
+-        for(String name:new String[]{"com.tencent.mobileqq.setting.main.MainSettingConfigProvider","com.tencent.mobileqq.setting.main.NewSettingConfigProvider","com.tencent.mobileqq.setting.main.b"}){
+-            try{
+-                Class<?> type=Class.forName(name,false,host);
+-                for(Method method:type.getDeclaredMethods()){
+-                    Class<?>[] a=method.getParameterTypes();
+-                    if(List.class.isAssignableFrom(method.getReturnType())&&a.length==1&&Context.class.isAssignableFrom(a[0])){
+-                        method.setAccessible(true);
+-                        XposedBridge.hookMethod(method,new XC_MethodHook(60){
+-                            @Override protected void afterHookedMethod(MethodHookParam p){
+-                                try{if(!p.hasThrowable())p.setResult(decorate((Context)p.args[0],p.getResult(),host,dataDir,name));}
+-                                catch(Throwable t){Log.e(SlimEntry.TAG,"settings insertion failed; instance="+instance,t);}
+-                            }
+-                        });
+-                        count++;
+-                    }
+-                }
+-            }catch(ClassNotFoundException ignored){}catch(Throwable t){Log.e(SlimEntry.TAG,"provider hook failed: "+name,t);}
+-        }
+-        Log.i(SlimEntry.TAG,"settings providers hooked="+count+"; instance="+instance);
+-    }
+-
+-    @SuppressWarnings({"rawtypes","unchecked"})
+-    private static Object decorate(final Context context,Object result,ClassLoader host,String dataDir,String providerName)throws Throwable{
+-        if(!(result instanceof List))return result;
+-        if(decorated(result))return result;
+-        List sections=new ArrayList((List)result);
+-        if(sections.isEmpty())return result;
+-        Class<?> base=null;
+-        for(String n:new String[]{"com.tencent.mobileqq.setting.main.processor.AccountSecurityItemProcessor","com.tencent.mobileqq.setting.main.processor.AboutItemProcessor"}){
+-            try{base=Class.forName(n,false,host).getSuperclass();break;}catch(ClassNotFoundException ignored){}
+-        }
+-        if(base==null)throw new IllegalStateException("setting processor base missing");
+-        ArrayList<Class<?>> candidates=new ArrayList<>();
+-        for(String n:new String[]{"com.tencent.mobileqq.setting.processor.g","com.tencent.mobileqq.setting.processor.h","com.tencent.mobileqq.setting.processor.i","com.tencent.mobileqq.setting.processor.j","as3.i"}){
+-            try{Class<?> c=Class.forName(n,false,host);if(c.getSuperclass()==base)candidates.add(c);}catch(ClassNotFoundException ignored){}
+-        }
+-        if(candidates.size()!=1)throw new IllegalStateException("simple processor candidates="+candidates);
+-        Class<?> pc=candidates.get(0);
+-        ArrayList<Method> setters=new ArrayList<>();
+-        for(Method m:pc.getDeclaredMethods()){
+-            Class<?>[] p=m.getParameterTypes();
+-            if(m.getReturnType()==Void.TYPE&&p.length==1&&"kotlin.jvm.functions.Function0".equals(p[0].getName()))setters.add(m);
+-        }
+-        setters.sort(Comparator.comparing(Method::getName));
+-        if(setters.isEmpty()||setters.size()>2)throw new IllegalStateException("callback setters="+setters);
+-        Method setter=setters.get(0);setter.setAccessible(true);
+-        Constructor<?> ctor;boolean five;
+-        try{ctor=pc.getDeclaredConstructor(Context.class,int.class,CharSequence.class,int.class,String.class);five=true;}
+-        catch(NoSuchMethodException e){ctor=pc.getDeclaredConstructor(Context.class,int.class,CharSequence.class,int.class);five=false;}
+-        ctor.setAccessible(true);
+-        int icon=context.getResources().getIdentifier("qui_tuning","drawable",context.getPackageName());
+-        Object processor=five?ctor.newInstance(context,ENTRY_ID,"QQ瘦身",icon,null):ctor.newInstance(context,ENTRY_ID,"QQ瘦身",icon);
+-        final Class<?> function0=setter.getParameterTypes()[0];
+-        final Object unit=function0.getClassLoader().loadClass("kotlin.Unit").getField("INSTANCE").get(null);
+-        Object callback=Proxy.newProxyInstance(host,new Class[]{function0},(proxy,m,args)->{
+-            if("invoke".equals(m.getName())){SlimUi.show(context,dataDir);return unit;}
+-            if("toString".equals(m.getName()))return "QQSlimClick";
+-            if("hashCode".equals(m.getName()))return System.identityHashCode(proxy);
+-            if("equals".equals(m.getName()))return args!=null&&args.length==1&&proxy==args[0];
+-            return null;
+-        });
+-        setter.invoke(processor,callback);
+-        Class<?> sc=sections.get(0).getClass();Constructor<?> sctor;boolean extended;
+-        try{sctor=sc.getDeclaredConstructor(List.class,CharSequence.class,CharSequence.class);extended=false;}
+-        catch(NoSuchMethodException e){sctor=sc.getDeclaredConstructor(List.class,CharSequence.class,CharSequence.class,int.class,host.loadClass("kotlin.jvm.internal.DefaultConstructorMarker"));extended=true;}
+-        sctor.setAccessible(true);ArrayList<Object> one=new ArrayList<>(1);one.add(processor);
+-        Object slimSection=extended?sctor.newInstance(one,"","",6,null):sctor.newInstance(one,"","");
+-
+-        // QA's current SettingEntryHook inserts its section at 1 (old provider) or 2 (new provider).
+-        // Locate the real QAuxiliary section when present, otherwise use that exact reference slot + 1.
+-        int qa=-1;
+-        for(int i=0;i<sections.size();i++)if(deepContains(sections.get(i),"QAuxiliary",5,new java.util.IdentityHashMap<Object,Boolean>())){qa=i;break;}
+-        int qaReference=providerName.contains("NewSettingConfigProvider")?2:1;
+-        int insert=qa>=0?qa+1:Math.min(qaReference+1,sections.size());
+-        sections.add(insert,slimSection);
+-        synchronized(DECORATED){DECORATED.add(new java.lang.ref.WeakReference<Object>(sections));}
+-        Log.i(SlimEntry.TAG,"QQ瘦身 entry inserted; placement=section["+insert+"]; qaSection="+qa+"; provider="+providerName+"; uid="+android.os.Process.myUid()+"; user="+(android.os.Process.myUid()/100000)+"; dataDir="+dataDir);
+-        return sections;
+-    }
+-
+-    private static boolean deepContains(Object value,String needle,int depth,java.util.IdentityHashMap<Object,Boolean> seen){
+-        if(value==null||depth<0||seen.put(value,Boolean.TRUE)!=null)return false;
+-        if(value instanceof CharSequence)return value.toString().contains(needle);
+-        if(value instanceof Iterable){for(Object x:(Iterable<?>)value)if(deepContains(x,needle,depth-1,seen))return true;return false;}
+-        Class<?> c=value.getClass();if(c.isPrimitive()||c.isEnum()||c.getName().startsWith("java.lang."))return false;
+-        for(Class<?> k=c;k!=null&&k!=Object.class;k=k.getSuperclass())for(Field f:k.getDeclaredFields()){
+-            if(Modifier.isStatic(f.getModifiers()))continue;
+-            try{f.setAccessible(true);if(deepContains(f.get(value),needle,depth-1,seen))return true;}catch(Throwable ignored){}
+-        }
+-        return false;
+-    }
+-}
++package local.qqslim.module;
++
++import android.content.Context;
++import android.util.Log;
++import de.robv.android.xposed.XC_MethodHook;
++import de.robv.android.xposed.XposedBridge;
++import java.lang.reflect.Constructor;
++import java.lang.reflect.Method;
++import java.lang.reflect.Proxy;
++import java.lang.reflect.Field;
++import java.lang.reflect.Modifier;
++import java.util.ArrayList;
++import java.util.Comparator;
++import java.util.List;
++
++final class SettingsInjector {
++    private static final int ENTRY_ID=0x51534c49;
++    private static final List<java.lang.ref.WeakReference<Object>> DECORATED=new ArrayList<>();
++    private static boolean decorated(Object value){
++        synchronized(DECORATED){
++            java.util.Iterator<java.lang.ref.WeakReference<Object>> it=DECORATED.iterator();
++            while(it.hasNext()){Object x=it.next().get();if(x==null)it.remove();else if(x==value)return true;}
++            return false;
++        }
++    }
++    static int install(final ClassLoader host,final String instance,final String dataDir){
++        int count=0;
++        for(String name:new String[]{"com.tencent.mobileqq.setting.main.MainSettingConfigProvider","com.tencent.mobileqq.setting.main.NewSettingConfigProvider","com.tencent.mobileqq.setting.main.b"}){
++            try{
++                Class<?> type=Class.forName(name,false,host);
++                for(Method method:type.getDeclaredMethods()){
++                    Class<?>[] a=method.getParameterTypes();
++                    // Returning ArrayList is valid for List, not for arbitrary concrete subtypes.
++                    if(method.getReturnType()==List.class&&a.length==1&&Context.class.isAssignableFrom(a[0])){
++                        method.setAccessible(true);
++                        XposedBridge.hookMethod(method,new XC_MethodHook(60){
++                            @Override protected void afterHookedMethod(MethodHookParam p){
++                                try{if(!p.hasThrowable())p.setResult(decorate((Context)p.args[0],p.getResult(),host,dataDir,name));}
++                                catch(Throwable t){Log.e(SlimEntry.TAG,"settings insertion failed; instance="+instance,t);}
++                            }
++                        });
++                        count++;
++                    }
++                }
++            }catch(ClassNotFoundException ignored){}catch(Throwable t){Log.e(SlimEntry.TAG,"provider hook failed: "+name,t);}
++        }
++        Log.i(SlimEntry.TAG,"settings providers hooked="+count+"; instance="+instance);
++        return count;
++    }
++
++    @SuppressWarnings({"rawtypes","unchecked"})
++    private static Object decorate(final Context context,Object result,ClassLoader host,String dataDir,String providerName)throws Throwable{
++        if(!(result instanceof List))return result;
++        if(decorated(result))return result;
++        List sections=new ArrayList((List)result);
++        if(sections.isEmpty())return result;
++        for(Object section:sections)if(deepContains(section,Integer.valueOf(ENTRY_ID),5,new java.util.IdentityHashMap<Object,Boolean>()))return result;
++        Class<?> base=null;
++        for(String n:new String[]{"com.tencent.mobileqq.setting.main.processor.AccountSecurityItemProcessor","com.tencent.mobileqq.setting.main.processor.AboutItemProcessor"}){
++            try{base=Class.forName(n,false,host).getSuperclass();break;}catch(ClassNotFoundException ignored){}
++        }
++        if(base==null)throw new IllegalStateException("setting processor base missing");
++        ArrayList<Class<?>> candidates=new ArrayList<>();
++        for(String n:new String[]{"com.tencent.mobileqq.setting.processor.g","com.tencent.mobileqq.setting.processor.h","com.tencent.mobileqq.setting.processor.i","com.tencent.mobileqq.setting.processor.j","as3.i"}){
++            try{Class<?> c=Class.forName(n,false,host);if(c.getSuperclass()==base)candidates.add(c);}catch(ClassNotFoundException ignored){}
++        }
++        if(candidates.size()!=1)throw new IllegalStateException("simple processor candidates="+candidates);
++        Class<?> pc=candidates.get(0);
++        ArrayList<Method> setters=new ArrayList<>();
++        for(Method m:pc.getDeclaredMethods()){
++            Class<?>[] p=m.getParameterTypes();
++            if(m.getReturnType()==Void.TYPE&&p.length==1&&"kotlin.jvm.functions.Function0".equals(p[0].getName()))setters.add(m);
++        }
++        setters.sort(Comparator.comparing(Method::getName));
++        if(setters.isEmpty()||setters.size()>2)throw new IllegalStateException("callback setters="+setters);
++        Method setter=setters.get(0);setter.setAccessible(true);
++        Constructor<?> ctor;boolean five;
++        try{ctor=pc.getDeclaredConstructor(Context.class,int.class,CharSequence.class,int.class,String.class);five=true;}
++        catch(NoSuchMethodException e){ctor=pc.getDeclaredConstructor(Context.class,int.class,CharSequence.class,int.class);five=false;}
++        ctor.setAccessible(true);
++        int icon=context.getResources().getIdentifier("qui_tuning","drawable",context.getPackageName());
++        Object processor=five?ctor.newInstance(context,ENTRY_ID,"QQ瘦身",icon,null):ctor.newInstance(context,ENTRY_ID,"QQ瘦身",icon);
++        final Class<?> function0=setter.getParameterTypes()[0];
++        final Object unit=function0.getClassLoader().loadClass("kotlin.Unit").getField("INSTANCE").get(null);
++        Object callback=Proxy.newProxyInstance(host,new Class<?>[]{function0},(proxy,m,args)->{
++            if("invoke".equals(m.getName())){SlimUi.show(context,dataDir);return unit;}
++            if("toString".equals(m.getName()))return "QQSlimClick";
++            if("hashCode".equals(m.getName()))return System.identityHashCode(proxy);
++            if("equals".equals(m.getName()))return args!=null&&args.length==1&&proxy==args[0];
++            return null;
++        });
++        setter.invoke(processor,callback);
++        Class<?> sc=sections.get(0).getClass();Constructor<?> sctor;boolean extended;
++        try{sctor=sc.getDeclaredConstructor(List.class,CharSequence.class,CharSequence.class);extended=false;}
++        catch(NoSuchMethodException e){sctor=sc.getDeclaredConstructor(List.class,CharSequence.class,CharSequence.class,int.class,host.loadClass("kotlin.jvm.internal.DefaultConstructorMarker"));extended=true;}
++        sctor.setAccessible(true);ArrayList<Object> one=new ArrayList<>(1);one.add(processor);
++        Object slimSection=extended?sctor.newInstance(one,"","",6,null):sctor.newInstance(one,"","");
++
++        // QA's current SettingEntryHook inserts its section at 1 (old provider) or 2 (new provider).
++        // Locate the real QAuxiliary section when present, otherwise use that exact reference slot + 1.
++        int qa=-1;
++        for(int i=0;i<sections.size();i++)if(deepContains(sections.get(i),"QAuxiliary",5,new java.util.IdentityHashMap<Object,Boolean>())){qa=i;break;}
++        int qaReference=providerName.contains("NewSettingConfigProvider")?2:1;
++        int insert=qa>=0?qa+1:Math.min(qaReference+1,sections.size());
++        sections.add(insert,slimSection);
++        synchronized(DECORATED){DECORATED.add(new java.lang.ref.WeakReference<Object>(sections));}
++        Log.i(SlimEntry.TAG,"QQ瘦身 entry inserted; placement=section["+insert+"]; qaSection="+qa+"; provider="+providerName+"; uid="+android.os.Process.myUid()+"; user="+(android.os.Process.myUid()/100000)+"; dataDir="+dataDir);
++        return sections;
++    }
++
++    private static boolean deepContains(Object value,Object needle,int depth,java.util.IdentityHashMap<Object,Boolean> seen){
++        if(value==null||depth<0||seen.size()>=512||seen.put(value,Boolean.TRUE)!=null)return false;
++        if(needle instanceof Integer&&needle.equals(value))return true;
++        if(value instanceof CharSequence)return needle instanceof String&&value.toString().contains((String)needle);
++        if(value instanceof Iterable){int count=0;for(Object x:(Iterable<?>)value){if(++count>512)break;if(deepContains(x,needle,depth-1,seen))return true;}return false;}
++        Class<?> c=value.getClass();if(c.isPrimitive()||c.isEnum()||c.getName().startsWith("java.lang."))return false;
++        for(Class<?> k=c;k!=null&&k!=Object.class;k=k.getSuperclass())for(Field f:k.getDeclaredFields()){
++            if(Modifier.isStatic(f.getModifiers()))continue;
++            try{f.setAccessible(true);if(deepContains(f.get(value),needle,depth-1,seen))return true;}catch(Throwable ignored){}
++        }
++        return false;
++    }
++}
+--- a/qq-slim-module/src/local/qqslim/module/SlimCatalog.java
++++ b/qq-slim-module/src/local/qqslim/module/SlimCatalog.java
+@@ -1,75 +1,93 @@
+-package local.qqslim.module;
+-
+-import android.content.Context;
+-import android.os.Environment;
+-import java.io.File;
+-import java.util.ArrayList;
+-import java.util.Collections;
+-import java.util.Comparator;
+-import java.util.List;
+-
+-/** Directory catalogue copied from the original QQ瘦身 preset table. */
+-final class SlimCatalog {
+-    static final class Item {
+-        final String name,template; final File path; long bytes=-1; String error;
+-        boolean cleaning;
+-        boolean cleanable(){return !isProtected(template);}
+-        Item(String n,String t,File p){name=n;template=t;path=p;}
+-    }
+-    private static final String[] NAMES={
+-        "默认内部缓存","X5 WebView缓存","JSON卡片缓存","已下载的小程序","pddata缓存1","气泡/礼物/VIP素材",
+-        "默认外部缓存","AE素材缓存","TBS日志","TBS缓存","OneLog日志","OpenSDK临时文件","小世界缓存1","小世界缓存2","QQ秀下载","QQ钱包缓存","腾讯日志","地图缓存","视频编辑缓存","Zootopia下载","空间缓存",
+-        "音频缓存","小程序外部缓存","收藏缓存","接收文件缩略图","QQ图片","短视频广告","微信小程序缓存","Apollo素材","名片素材","表情素材","字体特效","字体信息","挂件素材","资料卡素材","群特效","戳一戳素材","当前帐号语音消息",
+-        "长截图缓存","聊天图片","图片磁盘缓存","头像缓存","热图缓存","pddata缓存2","照片缓存","涂鸦缓存","短视频缓存","缩略图缓存","群游戏卡片","群相册","Lottie素材","智图缓存","聊天图片（兼容项）","新名片缓存","QQ音乐缓存","群临时文件","频道临时文件","接收临时文件","NT接收数据",
+-        "MMKV缓存","TIM下载缓存","动态库缓存1","动态库缓存2","QQ表情资源","QQ动态库","Emoji缓存","模块图片缓存","模块视频缓存","模块崩溃日志"
+-    };
+-    private static final String[] PATHS={
+-        "G/cache","G/app_x5webview/Cache","G/files/ArkApp/","G/files/mini","G/files/pddata","G/files/files/vas_material_folder",
+-        "P/cache","P/files/ae","P/files/commonlog","P/files/tbs","P/files/onelog","P/files/opensdk_tmp","P/files/qcircle","P/qcircle","P/files/QQShowDownload","P/files/QWallet","P/files/tencent/","P/files/tencentmapsdk","P/files/video","P/files/zootopia_download","P/qzone",
+-        "P/Tencent/audio","P/Tencent/mini","P/Tencent/QQ_Favorite","P/files/QQfile_recv/.thumbnails","P/Tencent/QQ_Images","P/Tencent/QQ_Shortvideos","P/Tencent/wxminiapp","P/Tencent/MobileQQ/.apollo","P/Tencent/MobileQQ/.card","P/Tencent/MobileQQ/.emotionsm","P/Tencent/MobileQQ/.font_effect","P/Tencent/MobileQQ/.font_info","P/Tencent/MobileQQ/.pendant","P/Tencent/MobileQQ/.profilecard","P/Tencent/MobileQQ/.troop","P/Tencent/MobileQQ/.vaspoke","P/Tencent/MobileQQ/{{Q}}/ptt",
+-        "P/Tencent/MobileQQ/aio_long_shot","P/Tencent/MobileQQ/chatpic","P/Tencent/MobileQQ/diskcache","P/Tencent/MobileQQ/head","P/Tencent/MobileQQ/hotpic","P/Tencent/MobileQQ/pddata","P/Tencent/MobileQQ/photo","P/Tencent/MobileQQ/Scribble","P/Tencent/MobileQQ/shortvideo","P/Tencent/MobileQQ/thumb","P/Tencent/MobileQQ/troopgamecard","P/Tencent/MobileQQ/troopphoto","P/Tencent/MobileQQ/vas","P/Tencent/MobileQQ/zhitu","P/Tencent/MobileQQ/chatpic","P/Tencent/MobileQQ/newCard","P/Tencent/MobileQQ/qqmusic","P/Tencent/QQfile_recv/.trooptmp","P/Tencent/QQfile_recv/.guildtmp","P/Tencent/QQfile_recv/.tmp","P/Tencent/QQfile_recv/nt_data",
+-        "G/files/mmkv","G/files/tim","G/app_lib","G/app_libs","G/files/qq_emoticon_res","G/files/qqso","G/files/emoji","P/Serendipity/picCache","P/Serendipity/video","P/Serendipity/CrashReport"
+-    };
+-    static List<Item> resolve(Context context,String dataDir){
+-        File internal=new File(dataDir);
+-        // Environment is user-aware inside a user-0/user-999 host process.
+-        File external=externalRoot(context);
+-        ArrayList<Item> out=new ArrayList<>();
+-        for(int i=0;i<PATHS.length;i++){
+-            String t=PATHS[i];
+-            if(t.contains("{{Q}}")){
+-                File accounts=new File(external,"Tencent/MobileQQ");
+-                File[] children=accounts.listFiles();boolean found=false;
+-                if(children!=null)for(File f:children)if(f.isDirectory()&&f.getName().matches("[0-9]{5,12}")){
+-                    addSafe(out,NAMES[i]+" ("+f.getName()+")",t.replace("{{Q}}",f.getName()),internal,external);found=true;
+-                }
+-                if(!found)addSafe(out,NAMES[i]+"（未发现帐号目录）",t.replace("{{Q}}","ACCOUNT"),internal,external);
+-            }else addSafe(out,NAMES[i],t,internal,external);
+-        }
+-        return out;
+-    }
+-    /** Original HookEnv.getqqgen equivalent: QQ's per-user external app-data root. */
+-    static File externalRoot(Context context){
+-        File cache=context.getExternalCacheDir();
+-        if(cache!=null&&cache.getParentFile()!=null)return cache.getParentFile();
+-        return new File(Environment.getExternalStorageDirectory(),"Android/data/"+context.getPackageName());
+-    }
+-    private static void addSafe(List<Item> out,String n,String t,File internal,File external){
+-        File root=t.charAt(0)=='G'?internal:external;
+-        String rel=t.substring(1);while(rel.startsWith("/"))rel=rel.substring(1);
+-        File path=new File(root,rel);
+-        for(Item existing:out)if(existing.path.equals(path))return;
+-        out.add(new Item(n,t,path));
+-    }
+-    // These presets include persistent settings, executable components or user media.
+-    // Keep them visible for diagnosis, but never offer recursive clearing.
+-    static boolean isProtected(String t){
+-        return t.equals("G/files/mmkv")||t.equals("G/files/tim")
+-            ||t.equals("G/app_lib")||t.equals("G/app_libs")||t.equals("G/files/qqso")
+-            ||t.equals("P/Tencent/QQfile_recv/nt_data")||t.equals("P/Tencent/QQ_Favorite")
+-            ||t.equals("P/Tencent/QQ_Images")||t.endsWith("/ptt")
+-            ||t.equals("P/Tencent/MobileQQ/troopphoto");
+-    }
+-    static long size(File f) throws java.io.IOException{return FileOps.size(f);}
+-    static boolean delete(File f,File internal,File external){return FileOps.clear(f,internal,external);}
+-}
++package local.qqslim.module;
++
++import android.content.Context;
++import android.os.Environment;
++import java.io.File;
++import java.util.ArrayList;
++import java.util.List;
++
++/** Directory catalogue copied from the original QQ瘦身 preset table. */
++final class SlimCatalog {
++    static final class Item {
++        final String name,template; final File path; long bytes=-1; String error;
++        boolean cleaning;
++        boolean cleanable(){return !isProtected(template);}
++        Item(String n,String t,File p){name=n;template=t;path=p;}
++    }
++    private static final String[] NAMES={
++        "默认内部缓存","X5 WebView缓存","JSON卡片缓存","已下载的小程序","pddata缓存1","气泡/礼物/VIP素材",
++        "默认外部缓存","AE素材缓存","TBS日志","TBS缓存","OneLog日志","OpenSDK临时文件","小世界缓存1","小世界缓存2","QQ秀下载","QQ钱包缓存","腾讯日志","地图缓存","视频编辑缓存","Zootopia下载","空间缓存",
++        "音频缓存","小程序外部缓存","收藏缓存","接收文件缩略图","QQ图片","短视频广告","微信小程序缓存","Apollo素材","名片素材","表情素材","字体特效","字体信息","挂件素材","资料卡素材","群特效","戳一戳素材","当前帐号语音消息",
++        "长截图缓存","聊天图片","图片磁盘缓存","头像缓存","热图缓存","pddata缓存2","照片缓存","涂鸦缓存","短视频缓存","缩略图缓存","群游戏卡片","群相册","Lottie素材","智图缓存","聊天图片（兼容项）","新名片缓存","QQ音乐缓存","群临时文件","频道临时文件","接收临时文件","NT接收数据",
++        "MMKV缓存","TIM下载缓存","动态库缓存1","动态库缓存2","QQ表情资源","QQ动态库","Emoji缓存","模块图片缓存","模块视频缓存","模块崩溃日志"
++    };
++    private static final String[] PATHS={
++        "G/cache","G/app_x5webview/Cache","G/files/ArkApp/","G/files/mini","G/files/pddata","G/files/files/vas_material_folder",
++        "P/cache","P/files/ae","P/files/commonlog","P/files/tbs","P/files/onelog","P/files/opensdk_tmp","P/files/qcircle","P/qcircle","P/files/QQShowDownload","P/files/QWallet","P/files/tencent/","P/files/tencentmapsdk","P/files/video","P/files/zootopia_download","P/qzone",
++        "P/Tencent/audio","P/Tencent/mini","P/Tencent/QQ_Favorite","P/files/QQfile_recv/.thumbnails","P/Tencent/QQ_Images","P/Tencent/QQ_Shortvideos","P/Tencent/wxminiapp","P/Tencent/MobileQQ/.apollo","P/Tencent/MobileQQ/.card","P/Tencent/MobileQQ/.emotionsm","P/Tencent/MobileQQ/.font_effect","P/Tencent/MobileQQ/.font_info","P/Tencent/MobileQQ/.pendant","P/Tencent/MobileQQ/.profilecard","P/Tencent/MobileQQ/.troop","P/Tencent/MobileQQ/.vaspoke","P/Tencent/MobileQQ/{{Q}}/ptt",
++        "P/Tencent/MobileQQ/aio_long_shot","P/Tencent/MobileQQ/chatpic","P/Tencent/MobileQQ/diskcache","P/Tencent/MobileQQ/head","P/Tencent/MobileQQ/hotpic","P/Tencent/MobileQQ/pddata","P/Tencent/MobileQQ/photo","P/Tencent/MobileQQ/Scribble","P/Tencent/MobileQQ/shortvideo","P/Tencent/MobileQQ/thumb","P/Tencent/MobileQQ/troopgamecard","P/Tencent/MobileQQ/troopphoto","P/Tencent/MobileQQ/vas","P/Tencent/MobileQQ/zhitu","P/Tencent/MobileQQ/chatpic","P/Tencent/MobileQQ/newCard","P/Tencent/MobileQQ/qqmusic","P/Tencent/QQfile_recv/.trooptmp","P/Tencent/QQfile_recv/.guildtmp","P/Tencent/QQfile_recv/.tmp","P/Tencent/QQfile_recv/nt_data",
++        "G/files/mmkv","G/files/tim","G/app_lib","G/app_libs","G/files/qq_emoticon_res","G/files/qqso","G/files/emoji","P/Serendipity/picCache","P/Serendipity/video","P/Serendipity/CrashReport"
++    };
++    static List<Item> resolve(Context context,String dataDir) throws java.io.IOException{
++        File internal=new File(dataDir);
++        // Environment is user-aware inside a user-0/user-999 host process.
++        File external=externalRoot(context);
++        ArrayList<Item> out=new ArrayList<>();
++        for(int i=0;i<PATHS.length;i++){
++            String t=PATHS[i];
++            if(t.contains("{{Q}}")){
++                File accounts=new File(external,"Tencent/MobileQQ");
++                File[] children=null;boolean found=false;
++                try{
++                    java.nio.file.attribute.BasicFileAttributes a=java.nio.file.Files.readAttributes(accounts.toPath(),java.nio.file.attribute.BasicFileAttributes.class,java.nio.file.LinkOption.NOFOLLOW_LINKS);
++                    if(!a.isDirectory()||a.isSymbolicLink())throw new java.io.IOException("Invalid account directory");
++                    children=accounts.listFiles();
++                    if(children==null)throw new java.io.IOException("Account directory unreadable");
++                }catch(java.nio.file.NoSuchFileException absent){/* No account directories yet. */}
++                if(children!=null)for(File f:children)if(f.isDirectory()&&f.getName().matches("[0-9]{5,12}")){
++                    addSafe(out,NAMES[i]+" ("+f.getName()+")",t.replace("{{Q}}",f.getName()),internal,external);found=true;
++                }
++                if(!found)addSafe(out,NAMES[i]+"（未发现帐号目录）",t.replace("{{Q}}","ACCOUNT"),internal,external);
++            }else addSafe(out,NAMES[i],t,internal,external);
++        }
++        return out;
++    }
++    /** Original HookEnv.getqqgen equivalent: QQ's per-user external app-data root. */
++    static File externalRoot(Context context){
++        File cache=context.getExternalCacheDir();
++        if(cache!=null&&cache.getParentFile()!=null)return cache.getParentFile();
++        File files=context.getExternalFilesDir(null);
++        if(files!=null&&files.getParentFile()!=null)return files.getParentFile();
++        return new File(Environment.getExternalStorageDirectory(),"Android/data/"+context.getPackageName());
++    }
++    private static void addSafe(List<Item> out,String n,String t,File internal,File external){
++        File root=t.charAt(0)=='G'?internal:external;
++        String rel=t.substring(1);while(rel.startsWith("/"))rel=rel.substring(1);
++        File path=new File(root,rel);
++        for(Item existing:out)if(existing.path.equals(path))return;
++        out.add(new Item(n,t,path));
++    }
++    // These presets include persistent settings, executable components or user media.
++    // Keep them visible for diagnosis, but never offer recursive clearing.
++    static boolean isProtected(String t){
++        return t.equals("G/files/mmkv")||t.equals("G/files/tim")
++            ||t.equals("G/app_lib")||t.equals("G/app_libs")||t.equals("G/files/qqso")
++            ||t.equals("P/Tencent/QQfile_recv/nt_data")||t.equals("P/Tencent/QQ_Favorite")
++            ||t.equals("P/Tencent/QQ_Images")||t.endsWith("/ptt")
++            ||t.equals("P/Tencent/MobileQQ/troopphoto")||t.equals("P/files/QWallet")
++            ||t.equals("P/Tencent/audio")||t.equals("P/Tencent/MobileQQ/Scribble")
++            ||t.equals("P/Tencent/MobileQQ/photo");
++    }
++    static long size(File f,File internal,File external) throws java.io.IOException{return FileOps.size(f,internal,external);}
++    static boolean delete(Item item,File internal,File external){
++        if(!item.cleanable())return false;
++        boolean known=false;
++        for(String rule:PATHS)if(rule.equals(item.template))known=true;
++        // Expanded voice presets are read-only; no arbitrary dynamic deletion rules exist.
++        if(!known)return false;
++        File root=item.template.charAt(0)=='G'?internal:external;
++        File expected=new File(root,item.template.substring(2));
++        if(!expected.toPath().toAbsolutePath().normalize().equals(item.path.toPath().toAbsolutePath().normalize()))return false;
++        return FileOps.clear(item.path,internal,external);
++    }
++}
+--- a/qq-slim-module/src/local/qqslim/module/SlimEntry.java
++++ b/qq-slim-module/src/local/qqslim/module/SlimEntry.java
+@@ -17,7 +17,10 @@
+         String instance=p.appInfo.uid+"|"+p.appInfo.dataDir+"|"+p.processName;
+         if(!INSTALLED.add(instance))return;
+         try{
+-            SettingsInjector.install(p.classLoader,instance,p.appInfo.dataDir);
++            if(SettingsInjector.install(p.classLoader,instance,p.appInfo.dataDir)==0){
++                INSTALLED.remove(instance);
++                Log.w(TAG,"No compatible settings provider; entry inactive");return;
++            }
+             Log.i(TAG,"standalone loaded; instance="+instance+"; user="+(android.os.Process.myUid()/100000)+"; presets=69");
+         }catch(Throwable t){
+             INSTALLED.remove(instance);
+--- a/qq-slim-module/src/local/qqslim/module/SlimUi.java
++++ b/qq-slim-module/src/local/qqslim/module/SlimUi.java
+@@ -1,114 +1,195 @@
+-package local.qqslim.module;
+-
+-import android.app.AlertDialog;
+-import android.app.Activity;
+-import java.io.IOException;
+-import java.util.ArrayList;
+-import java.util.concurrent.Future;
+-import java.util.concurrent.atomic.AtomicBoolean;
+-import android.app.Dialog;
+-import android.content.Context;
+-import android.content.res.Configuration;
+-import android.graphics.Color;
+-import android.graphics.Typeface;
+-import android.graphics.drawable.GradientDrawable;
+-import android.graphics.drawable.ColorDrawable;
+-import android.os.Environment;
+-import android.os.Handler;
+-import android.os.Looper;
+-import android.util.Log;
+-import android.view.Gravity;
+-import android.view.View;
+-import android.view.ViewGroup;
+-import android.view.Window;
+-import android.view.WindowManager;
+-import android.widget.BaseAdapter;
+-import android.widget.Button;
+-import android.widget.LinearLayout;
+-import android.widget.ListView;
+-import android.widget.TextView;
+-import android.widget.Toast;
+-import java.io.File;
+-import java.text.DecimalFormat;
+-import java.util.Collections;
+-import java.util.Comparator;
+-import java.util.List;
+-import java.util.concurrent.ExecutorService;
+-import java.util.concurrent.Executors;
+-
+-final class SlimUi {
+-    private static final ExecutorService IO=Executors.newSingleThreadExecutor();
+-    static void show(Context c,String dataDir){
+-        if(Looper.myLooper()!=Looper.getMainLooper()){new Handler(Looper.getMainLooper()).post(()->show(c,dataDir));return;}
+-        if(!(c instanceof Activity)||((Activity)c).isFinishing()||((Activity)c).isDestroyed())return;
+-        final AtomicBoolean closed=new AtomicBoolean();
+-        final Palette p=Palette.from(c);
+-        final List<SlimCatalog.Item> items=new ArrayList<>();
+-        LinearLayout root=new LinearLayout(c);root.setOrientation(LinearLayout.VERTICAL);root.setBackgroundColor(p.page);
+-        LinearLayout bar=new LinearLayout(c);bar.setGravity(Gravity.CENTER);bar.setBackgroundColor(p.card);bar.setElevation(dp(c,4));
+-        TextView pageTitle=text(c,"QQ 瘦身 · 正在扫描",18,p.primary);pageTitle.setTypeface(Typeface.DEFAULT,Typeface.BOLD);bar.addView(pageTitle,new LinearLayout.LayoutParams(-2,dp(c,40)));root.addView(bar,new LinearLayout.LayoutParams(-1,dp(c,40)));
+-        ListView list=new ListView(c);list.setPadding(dp(c,12),dp(c,12),dp(c,12),dp(c,20));list.setClipToPadding(false);list.setDivider(new ColorDrawable(Color.TRANSPARENT));list.setDividerHeight(2);list.setOverScrollMode(View.OVER_SCROLL_NEVER);list.setVerticalScrollBarEnabled(false);
+-        final SlimAdapter adapter=new SlimAdapter(c,items,dataDir,p,closed);list.setAdapter(adapter);root.addView(list,new LinearLayout.LayoutParams(-1,0,1));
+-        Dialog dialog=new Dialog(c,p.dark?android.R.style.Theme_Material_NoActionBar:android.R.style.Theme_Material_Light_NoActionBar);dialog.setContentView(root);dialog.show();
+-        Window window=dialog.getWindow();if(window!=null){window.setLayout(WindowManager.LayoutParams.MATCH_PARENT,WindowManager.LayoutParams.MATCH_PARENT);window.setStatusBarColor(p.card);window.setNavigationBarColor(p.card);window.getDecorView().setSystemUiVisibility(p.dark?0:(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR|View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR));}
+-        Log.i(SlimEntry.TAG,"slim page shown; theme="+(p.dark?"dark":"light")+"; user="+userId()+"; uid="+android.os.Process.myUid()+"; internal="+dataDir+"; externalAppRoot="+SlimCatalog.externalRoot(c)+"; rows="+items.size());
+-        Handler main=new Handler(Looper.getMainLooper());
+-        Future<?> scan=IO.submit(()->{
+-            try{
+-                List<SlimCatalog.Item> result=SlimCatalog.resolve(c,dataDir);
+-                int errors=0;
+-                for(SlimCatalog.Item i:result){
+-                    if(closed.get()||Thread.currentThread().isInterrupted())return;
+-                    try{i.bytes=SlimCatalog.size(i.path);}catch(IOException|SecurityException e){i.error="扫描失败";errors++;}
+-                }
+-                result.sort((a,b)->Long.compare(b.bytes,a.bytes));final int failed=errors;
+-                main.post(()->{if(!adapter.active())return;items.addAll(result);adapter.notifyDataSetChanged();pageTitle.setText(failed==0?"QQ 瘦身":"QQ 瘦身 · "+failed+" 项扫描失败");});
+-            }catch(RuntimeException e){Log.e(SlimEntry.TAG,"scan failed",e);main.post(()->{if(adapter.active())pageTitle.setText("扫描失败，请重新打开");});}
+-        });
+-        dialog.setOnDismissListener(d->{closed.set(true);scan.cancel(true);main.removeCallbacksAndMessages(null);adapter.main.removeCallbacksAndMessages(null);if(adapter.confirmation!=null)adapter.confirmation.dismiss();});
+-    }
+-
+-    private static final class SlimAdapter extends BaseAdapter{
+-        final Context c;final List<SlimCatalog.Item> data;final File internal,external;final Palette palette;final Handler main=new Handler(Looper.getMainLooper());
+-        final AtomicBoolean closed;AlertDialog confirmation;
+-        SlimAdapter(Context c,List<SlimCatalog.Item> d,String dir,Palette p,AtomicBoolean closed){this.c=c;data=d;internal=new File(dir);external=SlimCatalog.externalRoot(c);palette=p;this.closed=closed;}
+-        boolean active(){return !closed.get()&&!((Activity)c).isFinishing()&&!((Activity)c).isDestroyed();}
+-        public int getCount(){return data.size();}public Object getItem(int p){return data.get(p);}public long getItemId(int p){return p;}
+-        public View getView(int pos,View old,ViewGroup parent){
+-            SlimCatalog.Item item=data.get(pos);LinearLayout card=new LinearLayout(c);card.setOrientation(LinearLayout.VERTICAL);card.setPadding(dp(c,16),dp(c,16),dp(c,16),dp(c,16));card.setBackground(roundRect(palette.card,dp(c,12)));
+-            LinearLayout row=new LinearLayout(c);row.setOrientation(LinearLayout.HORIZONTAL);row.setGravity(Gravity.CENTER_VERTICAL);
+-            LinearLayout words=new LinearLayout(c);words.setOrientation(LinearLayout.VERTICAL);
+-            TextView title=text(c,item.name,16,palette.primary);title.setTypeface(Typeface.DEFAULT,Typeface.BOLD);
+-            TextView size=text(c,item.error!=null?item.error:(item.bytes<0?"正在计算…":format(item.bytes)),13,palette.secondary);LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(-1,-2);sp.topMargin=dp(c,2);words.addView(title);words.addView(size,sp);row.addView(words,new LinearLayout.LayoutParams(0,-2,1));
+-            boolean enabled=item.cleanable()&&item.error==null&&item.bytes>0&&!item.cleaning;
+-            TextView clean=text(c,item.cleaning?"清理中":(item.cleanable()?"清理":"仅查看"),14,enabled?Color.rgb(239,68,68):palette.secondary);clean.setTypeface(Typeface.DEFAULT,Typeface.BOLD);clean.setGravity(Gravity.CENTER);clean.setPadding(dp(c,14),dp(c,6),dp(c,14),dp(c,6));clean.setMinHeight(dp(c,48));clean.setEnabled(enabled);clean.setOnClickListener(v->confirm(item));LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(-2,-2);cp.leftMargin=dp(c,12);row.addView(clean,cp);card.addView(row);return card;
+-        }
+-        void confirm(SlimCatalog.Item item){
+-            if(!active()||!item.cleanable()||item.cleaning||(confirmation!=null&&confirmation.isShowing()))return;
+-            confirmation=new AlertDialog.Builder(c).setTitle("清理“"+item.name+"”").setMessage(item.path.getAbsolutePath()+"\n\n将清空此目录内的文件，保留目录本身。本地副本可能丢失，QQ 可能重新生成缓存。")
+-                .setNegativeButton("取消",null).setPositiveButton("清理",(d,w)->{
+-                    if(!active()||item.cleaning)return;
+-                    item.cleaning=true;notifyDataSetChanged();
+-                    IO.execute(()->{
+-                        boolean ok=SlimCatalog.delete(item.path,internal,external);long bytes=-1;String error=null;
+-                        try{bytes=SlimCatalog.size(item.path);}catch(IOException|SecurityException e){error="扫描失败";}
+-                        final long remaining=bytes;final String problem=error;
+-                        main.post(()->{if(!active())return;item.cleaning=false;item.bytes=remaining;item.error=problem;data.sort((a,b)->Long.compare(b.bytes,a.bytes));notifyDataSetChanged();Toast.makeText(c,ok?"清理完成":"清理未完成，目录可能不可读或含链接",Toast.LENGTH_SHORT).show();});
+-                        Log.i(SlimEntry.TAG,"clean result="+ok);
+-                    });
+-                }).create();
+-            confirmation.show();
+-        }
+-    }
+-
+-    private static TextView text(Context c,String s,int z,int color){TextView v=new TextView(c);v.setText(s);v.setTextSize(z);v.setTextColor(color);return v;}
+-    private static GradientDrawable roundRect(int color,int radius){GradientDrawable d=new GradientDrawable();d.setColor(color);d.setCornerRadius(radius);return d;}
+-    private static final class Palette{
+-        final boolean dark;final int page,card,primary,secondary;
+-        Palette(boolean d,int p,int c,int a,int b){dark=d;page=p;card=c;primary=a;secondary=b;}
+-        static Palette from(Context c){boolean d=(c.getResources().getConfiguration().uiMode&Configuration.UI_MODE_NIGHT_MASK)==Configuration.UI_MODE_NIGHT_YES;return d?new Palette(true,Color.rgb(17,24,39),Color.rgb(31,41,55),Color.rgb(249,250,251),Color.rgb(156,163,175)):new Palette(false,Color.rgb(229,231,235),Color.WHITE,Color.rgb(31,41,55),Color.rgb(107,114,128));}
+-    }
+-    private static int dp(Context c,int x){return Math.round(x*c.getResources().getDisplayMetrics().density);}
+-    private static int userId(){return android.os.Process.myUid()/100000;}
+-    private static String format(long n){DecimalFormat f=new DecimalFormat("0.##");if(n>=1073741824)return f.format(n/1073741824d)+" GB";if(n>=1048576)return f.format(n/1048576d)+" MB";if(n>=1024)return f.format(n/1024d)+" KB";return n+" B";}
+-}
++package local.qqslim.module;
++
++import android.app.Activity;
++import android.app.AlertDialog;
++import android.app.Application;
++import android.app.Dialog;
++import android.content.Context;
++import android.content.res.Configuration;
++import android.graphics.Color;
++import android.graphics.Typeface;
++import android.graphics.drawable.ColorDrawable;
++import android.graphics.drawable.GradientDrawable;
++import android.os.Bundle;
++import android.os.Handler;
++import android.os.Looper;
++import android.util.Log;
++import android.view.Gravity;
++import android.view.View;
++import android.view.ViewGroup;
++import android.view.Window;
++import android.view.WindowManager;
++import android.widget.BaseAdapter;
++import android.widget.LinearLayout;
++import android.widget.ListView;
++import android.widget.TextView;
++import android.widget.Toast;
++import java.io.File;
++import java.io.IOException;
++import java.lang.ref.WeakReference;
++import java.text.DecimalFormat;
++import java.util.ArrayList;
++import java.util.List;
++import java.util.Map;
++import java.util.WeakHashMap;
++import java.util.concurrent.Future;
++import java.util.concurrent.LinkedBlockingQueue;
++import java.util.concurrent.RejectedExecutionException;
++import java.util.concurrent.ThreadPoolExecutor;
++import java.util.concurrent.TimeUnit;
++import java.util.concurrent.atomic.AtomicBoolean;
++
++final class SlimUi {
++    private static final ThreadPoolExecutor IO=new ThreadPoolExecutor(1,1,30,TimeUnit.SECONDS,
++            new LinkedBlockingQueue<Runnable>(32),r->{Thread t=new Thread(r,"QQSlim-IO");t.setDaemon(true);return t;});
++    // Weak values avoid a value -> dialog -> activity -> key retention cycle.
++    private static final Map<Activity,WeakReference<Dialog>> OPEN=new WeakHashMap<>();
++
++    static void show(Context context,String dataDir){
++        if(Looper.myLooper()!=Looper.getMainLooper()){
++            new Handler(Looper.getMainLooper()).post(()->show(context,dataDir));return;
++        }
++        Context unwrapped=context;
++        for(int i=0;i<16&&!(unwrapped instanceof Activity)&&unwrapped instanceof android.content.ContextWrapper;i++){
++            Context next=((android.content.ContextWrapper)unwrapped).getBaseContext();
++            if(next==null||next==unwrapped)break;unwrapped=next;
++        }
++        if(!(unwrapped instanceof Activity))return;
++        Activity activity=(Activity)unwrapped;
++        if(activity.isFinishing()||activity.isDestroyed())return;
++        WeakReference<Dialog> prior=OPEN.get(activity);
++        if(prior!=null&&prior.get()!=null&&prior.get().isShowing())return;
++        try{new Session(activity,dataDir).show();}
++        catch(RuntimeException e){Log.e(SlimEntry.TAG,"Page creation failed",e);Toast.makeText(activity,"页面打开失败",Toast.LENGTH_SHORT).show();}
++    }
++
++    private static final class Session implements Application.ActivityLifecycleCallbacks {
++        final Activity activity;
++        final Dialog dialog;
++        final Palette palette;
++        final File internal,external;
++        final Handler main=new Handler(Looper.getMainLooper());
++        final AtomicBoolean closed=new AtomicBoolean();
++        final List<Future<?>> tasks=new ArrayList<>();
++        final List<SlimCatalog.Item> items=new ArrayList<>();
++        final Adapter adapter=new Adapter();
++        TextView heading;
++        AlertDialog confirmation;
++        boolean registered;
++
++        Session(Activity activity,String dataDir){
++            this.activity=activity;palette=Palette.from(activity);
++            internal=new File(dataDir);external=SlimCatalog.externalRoot(activity);
++            dialog=new Dialog(activity,palette.dark?android.R.style.Theme_Material_NoActionBar:android.R.style.Theme_Material_Light_NoActionBar);
++        }
++
++        boolean active(){return !closed.get()&&!activity.isFinishing()&&!activity.isDestroyed();}
++
++        void show(){
++            LinearLayout root=new LinearLayout(activity);root.setOrientation(LinearLayout.VERTICAL);root.setBackgroundColor(palette.page);
++            heading=text(activity,"QQ 瘦身 · 正在扫描",18,palette.primary);heading.setGravity(Gravity.CENTER);heading.setTypeface(Typeface.DEFAULT,Typeface.BOLD);heading.setBackgroundColor(palette.card);
++            heading.setPadding(dp(activity,12),dp(activity,12),dp(activity,12),dp(activity,12));
++            root.addView(heading,new LinearLayout.LayoutParams(-1,-2));
++            ListView list=new ListView(activity);list.setPadding(dp(activity,12),dp(activity,12),dp(activity,12),dp(activity,20));list.setClipToPadding(false);
++            list.setDivider(new ColorDrawable(Color.TRANSPARENT));list.setDividerHeight(2);list.setOverScrollMode(View.OVER_SCROLL_NEVER);list.setAdapter(adapter);
++            root.addView(list,new LinearLayout.LayoutParams(-1,0,1));
++            dialog.setContentView(root);dialog.setOnDismissListener(d->close());
++            try{
++                dialog.show();
++                Window window=dialog.getWindow();if(window!=null)window.setLayout(WindowManager.LayoutParams.MATCH_PARENT,WindowManager.LayoutParams.MATCH_PARENT);
++                WindowStyle.apply(window,root,palette.dark);
++                OPEN.put(activity,new WeakReference<>(dialog));
++                activity.getApplication().registerActivityLifecycleCallbacks(this);registered=true;
++                submit(()->scan(activity.getApplicationContext()));
++            }catch(RuntimeException e){dialog.dismiss();close();throw e;}
++        }
++
++        void submit(Runnable work){
++            try{tasks.add(IO.submit(work));}
++            catch(RejectedExecutionException busy){heading.setText("任务较多，请稍后重新打开");}
++        }
++
++        void scan(Context context){
++            try{
++                List<SlimCatalog.Item> result=SlimCatalog.resolve(context,internal.getPath());int failed=0;
++                for(SlimCatalog.Item item:result){
++                    if(closed.get()||Thread.currentThread().isInterrupted())return;
++                    try{item.bytes=SlimCatalog.size(item.path,internal,external);}
++                    catch(IOException|RuntimeException e){item.error="扫描失败";failed++;Log.w(SlimEntry.TAG,"Cache scan failed: "+item.template,e);}
++                }
++                result.sort((a,b)->Long.compare(b.bytes,a.bytes));final int errors=failed;
++                main.post(()->{if(!active())return;items.addAll(result);adapter.notifyDataSetChanged();heading.setText(errors==0?"QQ 瘦身":"QQ 瘦身 · "+errors+" 项扫描失败");});
++            }catch(IOException|RuntimeException e){Log.e(SlimEntry.TAG,"Catalogue scan failed",e);main.post(()->{if(active())heading.setText("扫描失败，请重新打开");});}
++        }
++
++        void confirm(SlimCatalog.Item item){
++            if(!active()||!item.cleanable()||item.cleaning||item.error!=null||item.bytes<=0||(confirmation!=null&&confirmation.isShowing()))return;
++            confirmation=new AlertDialog.Builder(activity).setTitle("清理“"+item.name+"”")
++                    .setMessage(item.path.getAbsolutePath()+"\n\n将清空目录内的文件并保留目录。本地副本可能丢失；QQ 可能重新生成缓存，中断清理可能仅完成部分删除。")
++                    .setNegativeButton("取消",null).setPositiveButton("清理",(d,w)->{
++                        if(!active()||item.cleaning)return;
++                        item.cleaning=true;adapter.notifyDataSetChanged();
++                        try{
++                            tasks.add(IO.submit(()->{
++                                if(closed.get())return;
++                                boolean ok=SlimCatalog.delete(item,internal,external);long bytes=-1;String error=null;
++                                try{bytes=SlimCatalog.size(item.path,internal,external);}catch(IOException|RuntimeException e){error="扫描失败";}
++                                final long remaining=bytes;final String problem=error;
++                                main.post(()->{if(!active())return;item.cleaning=false;item.bytes=remaining;item.error=problem;items.sort((a,b)->Long.compare(b.bytes,a.bytes));adapter.notifyDataSetChanged();Toast.makeText(activity,ok?"清理完成":"清理未完成，请重新扫描",Toast.LENGTH_SHORT).show();});
++                                Log.i(SlimEntry.TAG,"Clean result="+ok);
++                            }));
++                        }catch(RejectedExecutionException busy){item.cleaning=false;adapter.notifyDataSetChanged();Toast.makeText(activity,"任务较多，请稍后重试",Toast.LENGTH_SHORT).show();}
++                    }).create();
++            confirmation.show();
++        }
++
++        void close(){
++            if(!closed.compareAndSet(false,true))return;
++            for(Future<?> task:tasks)task.cancel(true);tasks.clear();IO.purge();
++            main.removeCallbacksAndMessages(null);
++            if(confirmation!=null)confirmation.dismiss();
++            if(registered){activity.getApplication().unregisterActivityLifecycleCallbacks(this);registered=false;}
++            WeakReference<Dialog> reference=OPEN.get(activity);if(reference!=null&&reference.get()==dialog)OPEN.remove(activity);
++        }
++        @Override public void onActivityDestroyed(Activity a){if(a==activity){dialog.dismiss();close();}}
++        @Override public void onActivityCreated(Activity a,Bundle b){}
++        @Override public void onActivityStarted(Activity a){}
++        @Override public void onActivityResumed(Activity a){}
++        @Override public void onActivityPaused(Activity a){}
++        @Override public void onActivityStopped(Activity a){}
++        @Override public void onActivitySaveInstanceState(Activity a,Bundle b){}
++
++        final class Adapter extends BaseAdapter {
++            public int getCount(){return items.size();}
++            public Object getItem(int position){return items.get(position);}
++            public long getItemId(int position){return position;}
++            public View getView(int position,View old,ViewGroup parent){
++                SlimCatalog.Item item=items.get(position);
++                LinearLayout card=new LinearLayout(activity);card.setPadding(dp(activity,16),dp(activity,16),dp(activity,16),dp(activity,16));card.setGravity(Gravity.CENTER_VERTICAL);
++                GradientDrawable shape=new GradientDrawable();shape.setColor(palette.card);shape.setCornerRadius(dp(activity,12));card.setBackground(shape);
++                LinearLayout words=new LinearLayout(activity);words.setOrientation(LinearLayout.VERTICAL);
++                TextView title=text(activity,item.name,16,palette.primary);title.setTypeface(Typeface.DEFAULT,Typeface.BOLD);words.addView(title);
++                String status=item.error!=null?item.error:(item.bytes<0?"正在计算…":format(item.bytes));
++                TextView size=text(activity,status,13,palette.secondary);size.setPadding(0,dp(activity,2),0,0);words.addView(size);
++                card.addView(words,new LinearLayout.LayoutParams(0,-2,1));
++                boolean enabled=item.cleanable()&&item.error==null&&item.bytes>0&&!item.cleaning;
++                TextView clean=text(activity,item.cleaning?"清理中":(item.cleanable()?"清理":"仅查看"),14,enabled?Color.rgb(239,68,68):palette.secondary);
++                clean.setGravity(Gravity.CENTER);clean.setTypeface(Typeface.DEFAULT,Typeface.BOLD);clean.setMinHeight(dp(activity,48));clean.setMinWidth(dp(activity,48));clean.setPadding(dp(activity,12),dp(activity,6),dp(activity,12),dp(activity,6));clean.setEnabled(enabled);clean.setOnClickListener(v->confirm(item));
++                LinearLayout.LayoutParams button=new LinearLayout.LayoutParams(-2,-2);button.leftMargin=dp(activity,12);card.addView(clean,button);return card;
++            }
++        }
++    }
++
++    private static TextView text(Context context,String value,int size,int color){TextView view=new TextView(context);view.setText(value);view.setTextSize(size);view.setTextColor(color);return view;}
++    private static final class Palette {
++        final boolean dark;final int page,card,primary,secondary;
++        Palette(boolean dark,int page,int card,int primary,int secondary){this.dark=dark;this.page=page;this.card=card;this.primary=primary;this.secondary=secondary;}
++        static Palette from(Context context){
++            boolean dark=(context.getResources().getConfiguration().uiMode&Configuration.UI_MODE_NIGHT_MASK)==Configuration.UI_MODE_NIGHT_YES;
++            return dark?new Palette(true,Color.rgb(17,24,39),Color.rgb(31,41,55),Color.rgb(249,250,251),Color.rgb(156,163,175))
++                    :new Palette(false,Color.rgb(229,231,235),Color.WHITE,Color.rgb(31,41,55),Color.rgb(107,114,128));
++        }
++    }
++    private static int dp(Context context,int value){return Math.round(value*context.getResources().getDisplayMetrics().density);}
++    private static String format(long bytes){DecimalFormat f=new DecimalFormat("0.##");if(bytes>=1073741824)return f.format(bytes/1073741824d)+" GB";if(bytes>=1048576)return f.format(bytes/1048576d)+" MB";if(bytes>=1024)return f.format(bytes/1024d)+" KB";return bytes+" B";}
++}
+--- /dev/null
++++ b/qq-slim-module/src/local/qqslim/module/WindowStyle.java
+@@ -0,0 +1,42 @@
++package local.qqslim.module;
++
++import android.os.Build;
++import android.graphics.Insets;
++import android.view.View;
++import android.view.Window;
++import android.view.WindowInsets;
++import android.view.WindowInsetsController;
++
++/** Edge-to-edge layout with explicit system-bar/cutout insets on API 28+. */
++final class WindowStyle {
++    @SuppressWarnings("deprecation") // Legacy branch is required on API 28/29.
++    static void apply(Window window,View content,boolean dark){
++        if(window==null)return;
++        if(Build.VERSION.SDK_INT>=30){
++            window.setDecorFitsSystemWindows(false);
++            WindowInsetsController controller=window.getInsetsController();
++            if(controller!=null){
++                int mask=WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS|WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS;
++                controller.setSystemBarsAppearance(dark?0:mask,mask);
++            }
++        }else{
++            int flags=View.SYSTEM_UI_FLAG_LAYOUT_STABLE|View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN|View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION;
++            if(!dark)flags|=View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR|View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
++            window.getDecorView().setSystemUiVisibility(flags);
++        }
++        final int l=content.getPaddingLeft(),t=content.getPaddingTop(),r=content.getPaddingRight(),b=content.getPaddingBottom();
++        content.setOnApplyWindowInsetsListener((v,insets)->{
++            if(Build.VERSION.SDK_INT>=30){
++                Insets i=insets.getInsets(WindowInsets.Type.systemBars()|WindowInsets.Type.displayCutout());
++                v.setPadding(l+i.left,t+i.top,r+i.right,b+i.bottom);
++            }else{
++                int left=insets.getSystemWindowInsetLeft(),top=insets.getSystemWindowInsetTop(),right=insets.getSystemWindowInsetRight(),bottom=insets.getSystemWindowInsetBottom();
++                android.view.DisplayCutout cutout=insets.getDisplayCutout();
++                if(cutout!=null){left=Math.max(left,cutout.getSafeInsetLeft());top=Math.max(top,cutout.getSafeInsetTop());right=Math.max(right,cutout.getSafeInsetRight());bottom=Math.max(bottom,cutout.getSafeInsetBottom());}
++                v.setPadding(l+left,t+top,r+right,b+bottom);
++            }
++            return insets;
++        });
++        content.requestApplyInsets();
++    }
++}
+--- a/scripts/build.ps1
++++ b/scripts/build.ps1
+@@ -1,58 +1,72 @@
+-param(
+-    [string]$Sdk = $env:ANDROID_HOME,
+-    [string]$Source = "qq-slim-module",
+-    [string]$Output = "artifacts/qq-slim-standalone-v1.5.apk",
+-    [string]$XposedApi = ".local/xposed-api-82.jar",
+-    [string]$Keystore = ".local/debug.keystore"
+-)
+-$ErrorActionPreference = "Stop"
+-$root = Split-Path $PSScriptRoot -Parent
+-Push-Location $root
+-try {
+-    if (!$Sdk) { $Sdk = "F:/Android/Sdk" }
+-    $bt = Join-Path $Sdk "build-tools/35.0.0"
+-    $android = Join-Path $Sdk "platforms/android-35/android.jar"
+-    foreach ($file in @($android, $XposedApi, "$Source/AndroidManifest.xml")) {
+-        if (!(Test-Path -LiteralPath $file)) { throw "Missing build input: $file" }
+-    }
+-    if ((Get-FileHash $XposedApi -Algorithm SHA256).Hash -ne "F48C635F1C7469FDEC0E00AD2EA0B7A6B2F5B55065784A35B7CA3A84615E8E25") {
+-        throw "Xposed API checksum mismatch"
+-    }
+-    $work = Join-Path $root (".local/build/" + [guid]::NewGuid().ToString("N"))
+-    New-Item -ItemType Directory -Force "$work/classes","$work/dex",(Split-Path $Output -Parent) | Out-Null
+-    $sources = @(Get-ChildItem "$Source/src" -Recurse -Filter *.java | ForEach-Object FullName)
+-    & javac -encoding UTF-8 --release 8 -Xlint:all -cp "$android;$XposedApi" -d "$work/classes" @sources
+-    if ($LASTEXITCODE) { throw "javac exit=$LASTEXITCODE" }
+-    & jar cf "$work/classes.jar" -C "$work/classes" .
+-    if ($LASTEXITCODE) { throw "jar exit=$LASTEXITCODE" }
+-    & "$bt/d8.bat" --min-api 28 --lib $android --classpath $XposedApi --output "$work/dex" "$work/classes.jar"
+-    if ($LASTEXITCODE) { throw "d8 exit=$LASTEXITCODE" }
+-    $resourceArgs = @()
+-    if (Test-Path "$Source/res") { $resourceArgs = @('-S', "$Source/res") }
+-    & "$bt/aapt.exe" package -f -M "$Source/AndroidManifest.xml" -I $android -A "$Source/assets" @resourceArgs -F "$work/unsigned.apk"
+-    if ($LASTEXITCODE) { throw "aapt exit=$LASTEXITCODE" }
+-    Add-Type -AssemblyName System.IO.Compression.FileSystem
+-    $zip = [IO.Compression.ZipFile]::Open("$work/unsigned.apk", 'Update')
+-    try {
+-        [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip,"$work/dex/classes.dex","classes.dex") | Out-Null
+-        Get-ChildItem "$Source/META-INF" -Recurse -File | ForEach-Object {
+-            $name = "META-INF/" + $_.FullName.Substring((Resolve-Path "$Source/META-INF").Path.Length + 1).Replace('\','/')
+-            [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip,$_.FullName,$name) | Out-Null
+-        }
+-    } finally { $zip.Dispose() }
+-    & "$bt/zipalign.exe" -f -p 4 "$work/unsigned.apk" "$work/aligned.apk"
+-    if ($LASTEXITCODE) { throw "zipalign exit=$LASTEXITCODE" }
+-    if (!(Test-Path $Keystore)) {
+-        & keytool -genkeypair -keystore $Keystore -storepass android -keypass android -alias androiddebugkey -dname "CN=QQ Slim Development" -keyalg RSA -keysize 3072 -validity 10000
+-        if ($LASTEXITCODE) { throw "keytool exit=$LASTEXITCODE" }
+-    }
+-    & "$bt/apksigner.bat" sign --ks $Keystore --ks-key-alias androiddebugkey --ks-pass pass:android --key-pass pass:android --out $Output "$work/aligned.apk"
+-    if ($LASTEXITCODE) { throw "sign exit=$LASTEXITCODE" }
+-    & "$bt/apksigner.bat" verify --verbose --print-certs $Output
+-    if ($LASTEXITCODE) { throw "verify exit=$LASTEXITCODE" }
+-    & "$bt/zipalign.exe" -c -v 4 $Output
+-    if ($LASTEXITCODE) { throw "alignment exit=$LASTEXITCODE" }
+-    & "$bt/aapt.exe" dump badging $Output
+-    if ($LASTEXITCODE) { throw "badging exit=$LASTEXITCODE" }
+-    Get-FileHash -Algorithm SHA256 $Output | Format-List
+-} finally { Pop-Location }
++param(
++    [string]$Sdk = $env:ANDROID_HOME,
++    [string]$Source = "qq-slim-module",
++    [string]$Output = "artifacts/qq-slim-standalone-v1.6.apk",
++    [string]$XposedApi = ".local/xposed-api-82.jar",
++    [string]$Keystore = ".local/debug.keystore"
++)
++$ErrorActionPreference = "Stop"
++[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
++$root = Split-Path $PSScriptRoot -Parent
++Push-Location $root
++try {
++    if (!$Sdk) { $Sdk = $env:ANDROID_SDK_ROOT }
++    if (!$Sdk) { $Sdk = Join-Path $env:LOCALAPPDATA 'Android/Sdk' }
++    $bt = Join-Path $Sdk "build-tools/35.0.0"
++    $android = Join-Path $Sdk "platforms/android-35/android.jar"
++    if (!(Test-Path -LiteralPath $XposedApi)) {
++        New-Item -ItemType Directory -Force (Split-Path $XposedApi -Parent) | Out-Null
++        Invoke-WebRequest -UseBasicParsing -Uri 'https://api.xposed.info/de/robv/android/xposed/api/82/api-82.jar' -OutFile $XposedApi
++    }
++    foreach ($file in @($android, $XposedApi, "$Source/AndroidManifest.xml", "$bt/aapt.exe", "$bt/d8.bat", "$bt/apksigner.bat", "$bt/zipalign.exe")) {
++        if (!(Test-Path -LiteralPath $file)) { throw "Missing build input: $file" }
++    }
++    if ((Get-FileHash $XposedApi -Algorithm SHA256).Hash -ne "F48C635F1C7469FDEC0E00AD2EA0B7A6B2F5B55065784A35B7CA3A84615E8E25") {
++        throw "Xposed API checksum mismatch"
++    }
++    $work = Join-Path $root (".local/build/" + [guid]::NewGuid().ToString("N"))
++    $outputDirectory=Split-Path $Output -Parent
++    if (!$outputDirectory) { $outputDirectory='.' }
++    New-Item -ItemType Directory -Force "$work/classes","$work/dex",$outputDirectory | Out-Null
++    $sources = @(Get-ChildItem "$Source/src" -Recurse -Filter *.java | ForEach-Object FullName)
++    & javac '-J-Duser.language=en' '-J-Duser.country=US' -encoding UTF-8 --release 8 '-Xlint:all,-options' -Werror -cp "$android;$XposedApi" -d "$work/classes" @sources
++    if ($LASTEXITCODE) { throw "javac exit=$LASTEXITCODE" }
++    & jar cf "$work/classes.jar" -C "$work/classes" .
++    if ($LASTEXITCODE) { throw "jar exit=$LASTEXITCODE" }
++    & "$bt/d8.bat" --min-api 28 --lib $android --classpath $XposedApi --output "$work/dex" "$work/classes.jar"
++    if ($LASTEXITCODE) { throw "d8 exit=$LASTEXITCODE" }
++    $resourceArgs = @()
++    if (Test-Path "$Source/res") { $resourceArgs = @('-S', "$Source/res") }
++    & "$bt/aapt.exe" package -f -M "$Source/AndroidManifest.xml" -I $android -A "$Source/assets" @resourceArgs -F "$work/unsigned.apk"
++    if ($LASTEXITCODE) { throw "aapt exit=$LASTEXITCODE" }
++    Add-Type -AssemblyName System.IO.Compression.FileSystem
++    $zip = [IO.Compression.ZipFile]::Open("$work/unsigned.apk", 'Update')
++    try {
++        [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip,"$work/dex/classes.dex","classes.dex") | Out-Null
++        Get-ChildItem "$Source/META-INF" -Recurse -File | ForEach-Object {
++            $name = "META-INF/" + $_.FullName.Substring((Resolve-Path "$Source/META-INF").Path.Length + 1).Replace('\','/')
++            [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip,$_.FullName,$name) | Out-Null
++        }
++    } finally { $zip.Dispose() }
++    & "$bt/zipalign.exe" -f -p 4 "$work/unsigned.apk" "$work/aligned.apk"
++    if ($LASTEXITCODE) { throw "zipalign exit=$LASTEXITCODE" }
++    if (!(Test-Path $Keystore)) {
++        New-Item -ItemType Directory -Force (Split-Path $Keystore -Parent) | Out-Null
++        & keytool -genkeypair -keystore $Keystore -storepass android -keypass android -alias androiddebugkey -dname "CN=QQ Slim Development" -keyalg RSA -keysize 3072 -validity 10000
++        if ($LASTEXITCODE) { throw "keytool exit=$LASTEXITCODE" }
++    }
++    & "$bt/apksigner.bat" sign --v4-signing-enabled false --ks $Keystore --ks-key-alias androiddebugkey --ks-pass pass:android --key-pass pass:android --out "$work/signed.apk" "$work/aligned.apk"
++    if ($LASTEXITCODE) { throw "sign exit=$LASTEXITCODE" }
++    & "$bt/apksigner.bat" verify --verbose --print-certs "$work/signed.apk"
++    if ($LASTEXITCODE) { throw "verify exit=$LASTEXITCODE" }
++    & "$bt/zipalign.exe" -c -v 4 "$work/signed.apk"
++    if ($LASTEXITCODE) { throw "alignment exit=$LASTEXITCODE" }
++    & "$bt/aapt.exe" dump badging "$work/signed.apk"
++    if ($LASTEXITCODE) { throw "badging exit=$LASTEXITCODE" }
++    if ([IO.Path]::IsPathRooted($Output)) { $destination=[IO.Path]::GetFullPath($Output) }
++    else { $destination=[IO.Path]::GetFullPath((Join-Path (Get-Location).Path $Output)) }
++    Copy-Item -LiteralPath "$work/signed.apk" -Destination "$destination.new" -Force
++    if (Test-Path -LiteralPath $destination) { [IO.File]::Replace("$destination.new", $destination, $null) }
++    else { [IO.File]::Move("$destination.new", $destination) }
++    Get-FileHash -Algorithm SHA256 $destination | Format-List
++} finally { Pop-Location }
+--- a/scripts/review_fixes.py
++++ /dev/null
+@@ -1,65 +0,0 @@
+-from pathlib import Path
+-
+-base = Path('qq-slim-module/src/local/qqslim/module')
+-p = base / 'MainActivity.java'
+-s = p.read_text(encoding='utf-8').replace('v1.0-standalone · 69项原始目录规则', 'v1.5-reviewed · 69项规则（重叠合并、重要数据仅查看）')
+-s = s.replace('"??????"', '"应用启动失败"').replace('"????????"', '"应用详情启动失败"')
+-p.write_text(s, encoding='utf-8')
+-
+-p = base / 'SlimUi.java'
+-s = p.read_text(encoding='utf-8')
+-s = s.replace('import android.app.AlertDialog;', 'import android.app.AlertDialog;\nimport android.app.Activity;\nimport java.io.IOException;\nimport java.util.ArrayList;\nimport java.util.concurrent.Future;\nimport java.util.concurrent.atomic.AtomicBoolean;')
+-s = s.replace('        final Palette p=Palette.from(c);\n        final List<SlimCatalog.Item> items=SlimCatalog.resolve(c,dataDir);', '''        if(Looper.myLooper()!=Looper.getMainLooper()){new Handler(Looper.getMainLooper()).post(()->show(c,dataDir));return;}
+-        if(!(c instanceof Activity)||((Activity)c).isFinishing()||((Activity)c).isDestroyed())return;
+-        final AtomicBoolean closed=new AtomicBoolean();
+-        final Palette p=Palette.from(c);
+-        final List<SlimCatalog.Item> items=new ArrayList<>();''')
+-s = s.replace('text(c,"QQ 瘦身",18', 'text(c,"QQ 瘦身 · 正在扫描",18')
+-s = s.replace('new SlimAdapter(c,items,dataDir,p)', 'new SlimAdapter(c,items,dataDir,p,closed)')
+-start = s.index('        IO.execute(()->{')
+-end = s.index('\n    private static final class SlimAdapter', start)
+-s = s[:start]+'''        Future<?> scan=IO.submit(()->{
+-            try{
+-                List<SlimCatalog.Item> result=SlimCatalog.resolve(c,dataDir);
+-                int errors=0;
+-                for(SlimCatalog.Item i:result){
+-                    if(closed.get()||Thread.currentThread().isInterrupted())return;
+-                    try{i.bytes=SlimCatalog.size(i.path);}catch(IOException|SecurityException e){i.error="扫描失败";errors++;}
+-                }
+-                result.sort((a,b)->Long.compare(b.bytes,a.bytes));final int failed=errors;
+-                main.post(()->{if(!adapter.active())return;items.addAll(result);adapter.notifyDataSetChanged();pageTitle.setText(failed==0?"QQ 瘦身":"QQ 瘦身 · "+failed+" 项扫描失败");});
+-            }catch(RuntimeException e){Log.e(SlimEntry.TAG,"scan failed",e);main.post(()->{if(adapter.active())pageTitle.setText("扫描失败，请重新打开");});}
+-        });
+-        dialog.setOnDismissListener(d->{closed.set(true);scan.cancel(true);main.removeCallbacksAndMessages(null);adapter.main.removeCallbacksAndMessages(null);if(adapter.confirmation!=null)adapter.confirmation.dismiss();});
+-    }
+-''' + s[end:]
+-s = s.replace('        SlimAdapter(Context c,List<SlimCatalog.Item> d,String dir,Palette p){this.c=c;data=d;internal=new File(dir);external=SlimCatalog.externalRoot(c);palette=p;}', '''        final AtomicBoolean closed;AlertDialog confirmation;
+-        SlimAdapter(Context c,List<SlimCatalog.Item> d,String dir,Palette p,AtomicBoolean closed){this.c=c;data=d;internal=new File(dir);external=SlimCatalog.externalRoot(c);palette=p;this.closed=closed;}
+-        boolean active(){return !closed.get()&&!((Activity)c).isFinishing()&&!((Activity)c).isDestroyed();}''')
+-s = s.replace('title.setSingleLine(true);', '')
+-s = s.replace('item.bytes<0?"正在计算…":format(item.bytes)', 'item.error!=null?item.error:(item.bytes<0?"正在计算…":format(item.bytes))')
+-s = s.replace('            TextView clean=text(c,"清理",14,Color.rgb(239,68,68));', '''            boolean enabled=item.cleanable()&&item.error==null&&item.bytes>0&&!item.cleaning;
+-            TextView clean=text(c,item.cleaning?"清理中":(item.cleanable()?"清理":"仅查看"),14,enabled?Color.rgb(239,68,68):palette.secondary);''')
+-s = s.replace('clean.setEnabled(item.path.exists());', 'clean.setMinHeight(dp(c,48));clean.setEnabled(enabled);')
+-start=s.index('        void confirm(SlimCatalog.Item item)')
+-end=s.index('\n    private static TextView text',start)
+-s=s[:start]+'''        void confirm(SlimCatalog.Item item){
+-            if(!active()||!item.cleanable()||item.cleaning||(confirmation!=null&&confirmation.isShowing()))return;
+-            confirmation=new AlertDialog.Builder(c).setTitle("清理“"+item.name+"”").setMessage(item.path.getAbsolutePath()+"\\n\\n将清空此目录内的文件，保留目录本身。本地副本可能丢失，QQ 可能重新生成缓存。")
+-                .setNegativeButton("取消",null).setPositiveButton("清理",(d,w)->{
+-                    if(!active()||item.cleaning)return;
+-                    item.cleaning=true;notifyDataSetChanged();
+-                    IO.execute(()->{
+-                        boolean ok=SlimCatalog.delete(item.path,internal,external);long bytes=-1;String error=null;
+-                        try{bytes=SlimCatalog.size(item.path);}catch(IOException|SecurityException e){error="扫描失败";}
+-                        final long remaining=bytes;final String problem=error;
+-                        main.post(()->{if(!active())return;item.cleaning=false;item.bytes=remaining;item.error=problem;data.sort((a,b)->Long.compare(b.bytes,a.bytes));notifyDataSetChanged();Toast.makeText(c,ok?"清理完成":"清理未完成，目录可能不可读或含链接",Toast.LENGTH_SHORT).show();});
+-                        Log.i(SlimEntry.TAG,"clean result="+ok);
+-                    });
+-                }).create();
+-            confirmation.show();
+-        }
+-    }
+-''' +s[end:]
+-s=s.replace('Color.rgb(156,163,175));}', 'Color.rgb(107,114,128));}')
+-p.write_text(s,encoding='utf-8')
+--- /dev/null
++++ b/scripts/test-ui.py
+@@ -0,0 +1,58 @@
++import argparse
++import json
++import os
++from pathlib import Path
++import shutil
++import subprocess
++import uuid
++import sys
++sys.stdout.reconfigure(encoding='utf-8', errors='backslashreplace')
++sys.stderr.reconfigure(encoding='utf-8', errors='backslashreplace')
++
++root = Path(__file__).resolve().parent.parent
++os.chdir(root)
++p = argparse.ArgumentParser()
++p.add_argument('--serial', required=True)
++p.add_argument('--sdk', default=os.environ.get('ANDROID_HOME') or os.environ.get('ANDROID_SDK_ROOT'))
++args = p.parse_args()
++if not args.serial.startswith('emulator-'):
++    p.error('Select an explicit disposable emulator.')
++if not args.sdk:
++    p.error('Set ANDROID_HOME or pass --sdk.')
++work = Path('.local/ui-tests') / uuid.uuid4().hex
++source = work / 'source'
++shutil.copytree('qq-slim-module/src', source / 'src')
++for file in Path('tests/ui').glob('*.java'):
++    shutil.copyfile(file, source / 'src/local/qqslim/module' / file.name)
++shutil.copyfile('tests/ui/AndroidManifest.xml', source / 'AndroidManifest.xml')
++(source / 'assets').mkdir()
++(source / 'META-INF').mkdir()
++records = []
++
++
++def run(command, check=True):
++    result = subprocess.run([str(x) for x in command], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
++    record = dict(argv=[str(x) for x in command], exit=result.returncode,
++                  stdout=result.stdout.decode('utf-8', errors='replace'), stderr=result.stderr.decode('utf-8', errors='replace'))
++    records.append(record)
++    print(record['stdout'], end='')
++    if result.returncode and check:
++        print(record['stderr'])
++        raise RuntimeError('Command failed: ' + str(command[0]))
++    return record
++
++
++adb = [Path(args.sdk) / 'platform-tools/adb.exe', '-s', args.serial]
++try:
++    run(['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 'scripts/build.ps1', '-Sdk', args.sdk,
++         '-Source', source, '-Output', work / 'ui-tests.apk'])
++    run([*adb, 'install', '-r', work / 'ui-tests.apk'])
++    for dark in (False, True):
++        run([*adb, 'shell', 'cmd', 'uimode', 'night', 'yes' if dark else 'no'])
++        result = run([*adb, 'shell', 'am', 'instrument', '-w', '-r', '-e', 'dark', str(dark).lower(),
++                      'local.qqslim.test/local.qqslim.module.UiInstrumentation'])
++        assert 'failed=0' in result['stdout'] and 'INSTRUMENTATION_CODE: -1' in result['stdout'], 'UI suite failed'
++finally:
++    run([*adb, 'shell', 'cmd', 'uimode', 'night', 'no'])
++    run([*adb, 'uninstall', 'local.qqslim.test'], check=False)
++    Path('artifacts/review/ui-regression.json').write_text(json.dumps(records, ensure_ascii=False, indent=2), encoding='utf-8')
+--- /dev/null
++++ b/scripts/test.py
+@@ -0,0 +1,74 @@
++"""Compile the real sources plus test-only host fixtures, then run on an explicit emulator."""
++import argparse
++import hashlib
++import json
++import os
++from pathlib import Path
++import subprocess
++import sys
++import uuid
++
++ROOT = Path(__file__).resolve().parent.parent
++os.chdir(ROOT)
++p = argparse.ArgumentParser()
++p.add_argument('--serial', required=True)
++p.add_argument('--sdk', default=os.getenv('ANDROID_HOME') or os.getenv('ANDROID_SDK_ROOT'))
++p.add_argument('--source', default='qq-slim-module')
++p.add_argument('--label', default='regression')
++p.add_argument('--expect-fail', action='store_true')
++args = p.parse_args()
++if not args.serial.startswith('emulator-'):
++    p.error('Tests require an explicitly selected emulator, never a physical phone.')
++if not args.sdk:
++    p.error('Set ANDROID_HOME or pass --sdk.')
++sdk = Path(args.sdk)
++bt = sdk / 'build-tools/35.0.0'
++android = sdk / 'platforms/android-35/android.jar'
++api = ROOT / '.local/xposed-api-82.jar'
++assert hashlib.sha256(api.read_bytes()).hexdigest() == 'f48c635f1c7469fdec0e00ad2ea0b7a6b2f5b55065784a35b7ca3a84615e8e25'
++work = ROOT / '.local/tests' / uuid.uuid4().hex
++(work / 'classes').mkdir(parents=True)
++(work / 'dex').mkdir()
++records = []
++env = os.environ.copy()
++env['JAVA_TOOL_OPTIONS'] = env.get('JAVA_TOOL_OPTIONS', '') + ' -Duser.language=en -Duser.country=US -Dfile.encoding=UTF-8'
++
++
++def run(command, check=True):
++    result = subprocess.run([str(v) for v in command], stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
++    record = {'argv': [str(v) for v in command], 'exit': result.returncode,
++              'stdout': result.stdout.decode('utf-8', errors='replace'),
++              'stderr': result.stderr.decode('utf-8', errors='replace')}
++    records.append(record)
++    print(record['stdout'], end='')
++    if result.returncode:
++        print(record['stderr'], end='', file=sys.stderr)
++        if check:
++            raise RuntimeError(f'Command exit={result.returncode}: {command[0]}')
++    return record
++
++
++try:
++    sources = sorted(Path(args.source).joinpath('src').rglob('*.java')) + sorted(Path('tests').rglob('*.java'))
++    warnings = [] if args.expect_fail else ['-Werror']
++    run(['javac', '-J-Duser.language=en', '-encoding', 'UTF-8', '--release', '8', '-Xlint:all,-options', *warnings,
++         '-cp', f'{android}{os.pathsep}{api}', '-d', work / 'classes', *sources])
++    run(['jar', 'cf', work / 'classes.jar', '-C', work / 'classes', '.'])
++    # Xposed API stubs and host fixtures exist only in this disposable test DEX, never the APK.
++    run([bt / 'd8.bat', '--min-api', '28', '--lib', android, '--output', work / 'dex', work / 'classes.jar', api])
++    adb = [sdk / 'platform-tools/adb.exe', '-s', args.serial]
++    remote = '/data/local/tmp/qqslim-tests-' + work.name
++    run([*adb, 'shell', 'mkdir', remote])
++    try:
++        run([*adb, 'push', work / 'dex/classes.dex', remote + '/tests.dex'])
++        result = run([*adb, 'shell', f'CLASSPATH={remote}/tests.dex app_process /system/bin local.qqslim.module.RegressionTests {remote}'], check=False)
++        if args.expect_fail:
++            assert result['exit'] != 0 and 'FAIL ' in result['stdout'] and 'RESULT passed=' in result['stdout'], 'Baseline did not reproduce a complete regression run'
++        else:
++            assert result['exit'] == 0 and 'failed=0' in result['stdout'], 'Regression suite failed'
++    finally:
++        # Exact randomly generated fixture path, not an app or user directory.
++        run([*adb, 'shell', f'rm -rf {remote}'])
++finally:
++    Path('artifacts/review').mkdir(parents=True, exist_ok=True)
++    Path(f'artifacts/review/{args.label}.json').write_text(json.dumps(records, ensure_ascii=False, indent=2), encoding='utf-8')
+--- /dev/null
++++ b/scripts/verify-apk.py
+@@ -0,0 +1,98 @@
++"""Validate package structure, icon pixels, signature, alignment and emulator launcher."""
++import argparse
++import hashlib
++import io
++import json
++import os
++from pathlib import Path
++import struct
++import subprocess
++import sys
++import zipfile
++import re
++from PIL import Image
++
++sys.stdout.reconfigure(encoding='utf-8', errors='backslashreplace')
++root = Path(__file__).resolve().parent.parent
++os.chdir(root)
++p = argparse.ArgumentParser()
++p.add_argument('--apk', default='artifacts/qq-slim-standalone-v1.6.apk')
++p.add_argument('--sdk', default=os.environ.get('ANDROID_HOME'))
++p.add_argument('--serial')
++args = p.parse_args()
++if args.serial and not args.serial.startswith('emulator-'):
++    p.error('Launcher checks only install to an explicit emulator.')
++apk = Path(args.apk)
++bt = Path(args.sdk) / 'build-tools/35.0.0'
++records = []
++
++
++def run(argv):
++    result = subprocess.run([str(x) for x in argv], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
++    record = dict(argv=[str(x) for x in argv], exit=result.returncode,
++                  stdout=result.stdout.decode('utf-8', errors='replace'), stderr=result.stderr.decode('utf-8', errors='replace'))
++    records.append(record)
++    assert result.returncode == 0, record
++    return record['stdout']
++
++
++def dex_classes(data):
++    def u32(offset): return struct.unpack_from('<I', data, offset)[0]
++    def string(index):
++        pos = u32(u32(60) + index * 4)
++        while data[pos] & 128: pos += 1
++        pos += 1
++        return data[pos:data.index(b'\0', pos)].decode('utf-8', errors='replace')
++    return {string(u32(u32(68) + u32(u32(100) + i * 32) * 4)) for i in range(u32(96))}
++
++
++try:
++    with zipfile.ZipFile(apk) as z:
++        assert len(z.namelist()) == len(set(z.namelist())), 'Duplicate ZIP entries'
++        assert z.testzip() is None, 'ZIP corruption'
++        assert z.read('assets/xposed_init').strip() == b'local.qqslim.module.SlimEntry'
++        assert z.read('META-INF/xposed/scope.list').strip() == b'com.tencent.mobileqq'
++        classes = dex_classes(z.read('classes.dex'))
++        assert all(c.startswith('Llocal/qqslim/module/') for c in classes), classes
++        assert not any('RegressionTests' in c or 'UiInstrumentation' in c for c in classes)
++        assert 'Llocal/qqslim/module/SlimEntry;' in classes
++        icons = [n for n in z.namelist() if n.startswith('res/') and n.endswith('.png')]
++        assert len(icons) == 10
++        for name in icons:
++            local = Path('qq-slim-module') / name.replace('-v4/', '/')
++            with Image.open(io.BytesIO(z.read(name))) as packed, Image.open(local) as original:
++                assert packed.convert('RGBA').tobytes() == original.convert('RGBA').tobytes(), name
++        assert 'res/mipmap-anydpi-v26/ic_launcher.xml' in z.namelist()
++    signed = run([bt / 'apksigner.bat', 'verify', '--verbose', '--print-certs', apk])
++    assert 'Verified using v3 scheme (APK Signature Scheme v3): true' in signed
++    assert 'e4957288c9c19ee83a4b6eb25a57072b0857c48f62f3bb2b695abacb468af51e' in signed, 'v1.5 signing identity changed'
++    run([bt / 'zipalign.exe', '-c', '-v', '4', apk])
++    badging = run([bt / 'aapt.exe', 'dump', 'badging', apk])
++    assert "name='local.qqslim.module' versionCode='7' versionName='1.6-reviewed'" in badging
++    assert "sdkVersion:'28'" in badging and "targetSdkVersion:'35'" in badging
++    assert 'android.permission.INTERNET' not in badging
++    if args.serial:
++        adb = [Path(args.sdk) / 'platform-tools/adb.exe', '-s', args.serial]
++        installed = run([*adb, 'shell', 'dumpsys', 'package', 'local.qqslim.module'])
++        version = re.search(r'versionCode=(\d+)', installed)
++        if version is None or int(version.group(1)) <= 6:
++            assert 'Success' in run([*adb, 'install', '-r', '.local/review-v16-baseline/qq-slim-standalone-v1.5.apk'])
++        assert 'Success' in run([*adb, 'install', '-r', apk])
++        for dark in (False, True):
++            run([*adb, 'shell', 'cmd', 'uimode', 'night', 'yes' if dark else 'no'])
++            started = run([*adb, 'shell', 'am', 'start', '-W', '-n', 'local.qqslim.module/.MainActivity'])
++            assert 'Error:' not in started
++            remote = '/data/local/tmp/qqslim-release-ui.xml'
++            run([*adb, 'shell', 'uiautomator', 'dump', remote])
++            xml = run([*adb, 'shell', 'cat', remote])
++            assert 'v1.6-reviewed' in xml and 'QQ瘦身独立模块' in xml
++            run([*adb, 'shell', 'rm', remote])
++        run([*adb, 'shell', 'cmd', 'uimode', 'night', 'no'])
++        crash = run([*adb, 'logcat', '-b', 'crash', '-d'])
++        assert 'Process: local.qqslim.module,' not in crash, 'Module crash recorded'
++    summary = dict(apk=str(apk.resolve()), sha256=hashlib.sha256(apk.read_bytes()).hexdigest(),
++                   bytes=apk.stat().st_size, icon_png_count=len(icons), class_count=len(classes),
++                   signature='v3 verified; same certificate as v1.5', launcher='light/dark passed' if args.serial else 'not run')
++    print(json.dumps(summary, ensure_ascii=False, indent=2))
++finally:
++    Path('artifacts/review/package-verification.json').write_text(json.dumps(records, ensure_ascii=False, indent=2), encoding='utf-8')
+--- /dev/null
++++ b/tests/com/tencent/mobileqq/setting/main/processor/AccountSecurityItemProcessor.java
+@@ -0,0 +1,2 @@
++package com.tencent.mobileqq.setting.main.processor;
++public class AccountSecurityItemProcessor extends Base {}
+--- /dev/null
++++ b/tests/com/tencent/mobileqq/setting/main/processor/Base.java
+@@ -0,0 +1,2 @@
++package com.tencent.mobileqq.setting.main.processor;
++public class Base {}
+--- /dev/null
++++ b/tests/com/tencent/mobileqq/setting/processor/g.java
+@@ -0,0 +1,11 @@
++package com.tencent.mobileqq.setting.processor;
++import android.content.Context;
++import com.tencent.mobileqq.setting.main.processor.Base;
++import kotlin.jvm.functions.Function0;
++public class g extends Base {
++    public final int id;
++    public final CharSequence label;
++    public Function0 callback;
++    public g(Context context,int id,CharSequence label,int icon){this.id=id;this.label=label;}
++    public void a(Function0 callback){this.callback=callback;}
++}
+--- /dev/null
++++ b/tests/kotlin/Unit.java
+@@ -0,0 +1,5 @@
++package kotlin;
++public final class Unit {
++    public static final Unit INSTANCE=new Unit();
++    private Unit(){}
++}
+--- /dev/null
++++ b/tests/kotlin/jvm/functions/Function0.java
+@@ -0,0 +1,2 @@
++package kotlin.jvm.functions;
++public interface Function0 {Object invoke();}
+--- /dev/null
++++ b/tests/local/qqslim/module/RegressionTests.java
+@@ -0,0 +1,116 @@
++package local.qqslim.module;
++
++import android.content.Context;
++import android.content.ContextWrapper;
++import android.content.res.Resources;
++import java.io.File;
++import java.io.IOException;
++import java.lang.reflect.InvocationTargetException;
++import java.lang.reflect.Method;
++import java.nio.file.Files;
++import java.nio.file.Path;
++import java.nio.file.LinkOption;
++import java.util.ArrayList;
++import java.util.Collections;
++import java.util.HashSet;
++import java.util.List;
++
++/** Executed by app_process on Android; no QQ data or live application is accessed. */
++public final class RegressionTests {
++    private static int passed,failed;
++    private static Path base,g,e,outside;
++    interface Check {void run() throws Throwable;}
++    private static void test(String name,Check check){
++        try{check.run();passed++;System.out.println("PASS "+name);}
++        catch(Throwable error){failed++;System.out.println("FAIL "+name+": "+error);}
++    }
++    private static void expect(boolean condition,String message){if(!condition)throw new AssertionError(message);}
++    private static void write(Path path,int bytes) throws IOException {Files.createDirectories(path.getParent());Files.write(path,new byte[bytes]);}
++    private static long size(Path path,Path internal,Path external) throws Throwable {
++        try{
++            Method method;
++            try{method=SlimCatalog.class.getDeclaredMethod("size",File.class,File.class,File.class);return (Long)method.invoke(null,path.toFile(),internal.toFile(),external.toFile());}
++            catch(NoSuchMethodException old){method=SlimCatalog.class.getDeclaredMethod("size",File.class);return (Long)method.invoke(null,path.toFile());}
++        }catch(InvocationTargetException wrapped){throw wrapped.getCause();}
++    }
++    private static boolean clear(String template,Path path,Path internal,Path external) throws Throwable {
++        try{
++            Method method;
++            try{method=SlimCatalog.class.getDeclaredMethod("delete",SlimCatalog.Item.class,File.class,File.class);return (Boolean)method.invoke(null,new SlimCatalog.Item("fixture",template,path.toFile()),internal.toFile(),external.toFile());}
++            catch(NoSuchMethodException old){method=SlimCatalog.class.getDeclaredMethod("delete",File.class,File.class,File.class);return (Boolean)method.invoke(null,path.toFile(),internal.toFile(),external.toFile());}
++        }catch(InvocationTargetException wrapped){throw wrapped.getCause();}
++    }
++    private static void blockedScan(Path path,Path internal,Path external) throws Throwable {
++        try{size(path,internal,external);throw new AssertionError("Expected scan error");}
++        catch(IOException expected){/* error, not a false zero */}
++    }
++    static class FixtureContext extends ContextWrapper {
++        final File external;
++        FixtureContext(Path external){super(null);this.external=external.toFile();}
++        @Override public File getExternalCacheDir(){return new File(external,"cache");}
++        @Override public File getExternalFilesDir(String type){return new File(external,"files");}
++        @Override public String getPackageName(){return "com.tencent.mobileqq";}
++        @Override public Resources getResources(){return Resources.getSystem();}
++    }
++    public static final class Section {
++        final List<?> items;final CharSequence title,subtitle;
++        public Section(List<?> items,CharSequence title,CharSequence subtitle){this.items=items;this.title=title;this.subtitle=subtitle;}
++    }
++    private static Object decorate(Object result,Context context) throws Throwable {
++        Method method=SettingsInjector.class.getDeclaredMethod("decorate",Context.class,Object.class,ClassLoader.class,String.class,String.class);method.setAccessible(true);
++        try{return method.invoke(null,context,result,RegressionTests.class.getClassLoader(),g.toString(),"MainSettingConfigProvider");}
++        catch(InvocationTargetException wrapped){throw wrapped.getCause();}
++    }
++    private static List<SlimCatalog.Item> catalogue(Context context) throws IOException{return SlimCatalog.resolve(context,g.toString());}
++
++    public static void main(String[] args) throws Throwable {
++        base=Files.createTempDirectory(new File(args[0]).toPath(),"qqslim-regression-");g=Files.createDirectories(base.resolve("internal"));e=Files.createDirectories(base.resolve("external"));outside=Files.createDirectories(base.resolve("outside"));
++        System.out.println("fixture="+base);
++        FixtureContext context=new FixtureContext(e);
++        test("size-and-empty",()->{write(g.resolve("cache/a"),3);write(g.resolve("cache/sub/b"),5);expect(size(g.resolve("cache"),g,e)==8,"sum");expect(size(g.resolve("missing"),g,e)==0,"missing");});
++        test("clear-preserves-selected-root",()->{expect(clear("G/cache",g.resolve("cache"),g,e),"clear");expect(Files.isDirectory(g.resolve("cache")),"root removed");expect(size(g.resolve("cache"),g,e)==0,"not empty");});
++        test("external-isolation",()->{write(e.resolve("cache/a"),7);write(g.resolve("cache/keep"),11);expect(clear("P/cache",e.resolve("cache"),g,e),"external clear");expect(Files.size(g.resolve("cache/keep"))==11,"internal changed");});
++        test("root-delete-blocked",()->expect(!clear("G/cache",g,g,e)&&Files.exists(g),"root deleted"));
++        test("outside-delete-blocked",()->{write(outside.resolve("keep"),13);expect(!clear("G/cache",outside,g,e),"outside accepted");expect(Files.size(outside.resolve("keep"))==13,"outside changed");});
++        test("prefix-collision-blocked",()->{Path prefix=Files.createDirectories(base.resolve("internal-other/cache"));write(prefix.resolve("keep"),17);expect(!clear("G/cache",prefix,g,e),"prefix accepted");});
++        test("template-path-mismatch-blocked",()->{Path other=g.resolve("files/not-cache");write(other.resolve("keep"),19);expect(!clear("G/cache",other,g,e),"template bypass");expect(Files.exists(other.resolve("keep")),"deleted mismatch");});
++        test("unknown-template-blocked",()->{write(g.resolve("unknown/a"),2);expect(!clear("G/unknown",g.resolve("unknown"),g,e),"unknown cleared");});
++        test("protected-mmkv-blocked",()->{write(g.resolve("files/mmkv/settings"),23);expect(!clear("G/files/mmkv",g.resolve("files/mmkv"),g,e),"mmkv cleared");expect(Files.exists(g.resolve("files/mmkv/settings")),"settings deleted");});
++        test("protected-libraries-and-media",()->{for(String t:new String[]{"G/app_lib","G/app_libs","G/files/qqso","P/Tencent/QQfile_recv/nt_data","P/Tencent/QQ_Favorite","P/Tencent/QQ_Images","P/Tencent/MobileQQ/12345/ptt","P/Tencent/MobileQQ/troopphoto","P/files/QWallet","P/Tencent/audio","P/Tencent/MobileQQ/Scribble","P/Tencent/MobileQQ/photo"})expect(SlimCatalog.isProtected(t),"not protected: "+t);});
++        test("alias-root-scan",()->{Path alias=base.resolve("alias");Files.createSymbolicLink(alias,g);write(g.resolve("cache/alias"),29);expect(size(alias.resolve("cache"),alias,e)==40,"legitimate root alias rejected");});
++        test("alias-root-clear",()->{Path alias=base.resolve("alias");expect(clear("G/cache",alias.resolve("cache"),alias,e),"alias clear");expect(Files.isDirectory(g.resolve("cache")),"alias root removed");});
++        test("selected-symlink-blocked",()->{Path link=g.resolve("linked");Files.createSymbolicLink(link,outside);blockedScan(link,g,e);expect(!clear("G/cache",link,g,e),"link accepted");});
++        test("nested-symlink-preflight",()->{write(g.resolve("cache/keep"),31);Files.createSymbolicLink(g.resolve("cache/link"),outside);blockedScan(g.resolve("cache"),g,e);expect(!clear("G/cache",g.resolve("cache"),g,e),"nested link accepted");expect(Files.exists(g.resolve("cache/keep")),"partial removal before preflight");Files.delete(g.resolve("cache/link"));});
++        test("dangling-symlink-blocked",()->{Path link=g.resolve("cache/dangling");Files.createSymbolicLink(link,base.resolve("absent"));blockedScan(g.resolve("cache"),g,e);expect(!clear("G/cache",g.resolve("cache"),g,e),"dangling accepted");Files.delete(link);});
++        test("ancestor-symlink-blocked",()->{Path link=g.resolve("parentLink");Files.createSymbolicLink(link,outside);blockedScan(link.resolve("any"),g,e);});
++        test("permission-error-not-zero",()->{Path locked=Files.createDirectories(g.resolve("locked"));write(locked.resolve("keep"),3);java.util.Set<java.nio.file.attribute.PosixFilePermission> permissions=Files.getPosixFilePermissions(locked);Files.setPosixFilePermissions(locked,Collections.emptySet());try{blockedScan(locked,g,e);}finally{Files.setPosixFilePermissions(locked,permissions);}});
++        test("permission-error-clear-fails",()->{Path locked=g.resolve("cache");java.util.Set<java.nio.file.attribute.PosixFilePermission> permissions=Files.getPosixFilePermissions(locked);Files.setPosixFilePermissions(locked,Collections.emptySet());try{expect(!clear("G/cache",locked,g,e),"permission treated as success");}finally{Files.setPosixFilePermissions(locked,permissions);}});
++        test("non-directory-selected-blocked",()->{write(g.resolve("file"),37);blockedScan(g.resolve("file"),g,e);expect(!clear("G/cache",g.resolve("file"),g,e),"file deleted");});
++        test("cancelled-scan",()->{Thread.currentThread().interrupt();try{blockedScan(g.resolve("cache"),g,e);}finally{Thread.interrupted();}});
++        test("cancelled-clear",()->{Thread.currentThread().interrupt();try{expect(!clear("G/cache",g.resolve("cache"),g,e),"cancel ignored");}finally{Thread.interrupted();}});
++        test("depth-limit",()->{Path deep=g.resolve("cache");for(int i=0;i<132;i++)deep=Files.createDirectories(deep.resolve("d"));write(deep.resolve("end"),1);blockedScan(g.resolve("cache"),g,e);expect(!clear("G/cache",g.resolve("cache"),g,e),"depth ignored");Files.delete(deep.resolve("end"));for(int i=0;i<132;i++){Files.delete(deep);deep=deep.getParent();}});
++        test("account-expansion-and-dedup",()->{Files.createDirectories(e.resolve("Tencent/MobileQQ/12345"));Files.createDirectories(e.resolve("Tencent/MobileQQ/987654"));List<SlimCatalog.Item> items=SlimCatalog.resolve(context,g.toString());expect(items.size()==69,"expected 68 unique + one expanded account: "+items.size());HashSet<String> unique=new HashSet<>();int voices=0;for(SlimCatalog.Item item:items){expect(unique.add(item.path.toString()),"duplicate path");if(item.template.endsWith("/ptt")){voices++;expect(!item.cleanable(),"voice deletable");}}expect(voices==2,"voices");});
++        test("files-root-fallback",()->{Context fallback=new FixtureContext(e){@Override public File getExternalCacheDir(){return null;}};expect(SlimCatalog.externalRoot(fallback).equals(e.toFile()),"files fallback");});
++        test("invalid-account-enumeration",()->{Path other=Files.createDirectories(base.resolve("bad-account-root"));write(other.resolve("Tencent/MobileQQ"),1);try{catalogue(new FixtureContext(other));throw new AssertionError("account enumeration silently ignored");}catch(IOException expected){}});
++        test("symlink-replacement-race",()->{
++            Path race=g.resolve("cache/race"),parked=g.resolve("race-park");Files.createDirectories(race);write(race.resolve("local"),2);
++            java.util.concurrent.atomic.AtomicBoolean stop=new java.util.concurrent.atomic.AtomicBoolean();
++            Thread swap=new Thread(()->{while(!stop.get())try{
++                if(Files.isSymbolicLink(race))Files.delete(race);
++                if(Files.exists(parked,LinkOption.NOFOLLOW_LINKS)){if(!Files.exists(race,LinkOption.NOFOLLOW_LINKS))Files.move(parked,race);}
++                if(!Files.exists(race,LinkOption.NOFOLLOW_LINKS))Files.createDirectories(race);
++                Files.move(race,parked);Files.createSymbolicLink(race,outside);
++                Thread.yield();
++            }catch(IOException ignored){}});
++            swap.start();try{for(int i=0;i<100;i++){clear("G/cache",g.resolve("cache"),g,e);expect(Files.size(outside.resolve("keep"))==13,"outside sentinel changed");}}finally{stop.set(true);swap.join();if(Files.isSymbolicLink(race))Files.delete(race);}
++        });
++        test("settings-immutable-input",()->{List<Section> original=Collections.singletonList(new Section(Collections.singletonList("ordinary"),"",""));Object decorated=decorate(original,context);expect(((List<?>)decorated).size()==2,"entry missing");expect(original.size()==1,"original changed");});
++        test("settings-same-list-idempotent",()->{Object decorated=decorate(Collections.singletonList(new Section(Collections.singletonList("ordinary"),"","")),context);expect(decorate(decorated,context)==decorated,"not idempotent");});
++        test("settings-copied-list-idempotent",()->{Object decorated=decorate(Collections.singletonList(new Section(Collections.singletonList("ordinary"),"","")),context);List<?> copy=new ArrayList<>((List<?>)decorated);expect(((List<?>)decorate(copy,context)).size()==copy.size(),"copied list duplicated");});
++        test("settings-qa-placement",()->{List<Section> sections=new ArrayList<>();sections.add(new Section(Collections.singletonList("QAuxiliary"),"",""));sections.add(new Section(Collections.singletonList("ordinary"),"",""));List<?> result=(List<?>)decorate(sections,context);expect(((Section)result.get(1)).items.get(0) instanceof com.tencent.mobileqq.setting.processor.g,"wrong placement");});
++        test("settings-proxy-object-methods",()->{List<?> result=(List<?>)decorate(Collections.singletonList(new Section(Collections.singletonList("ordinary"),"","")),context);com.tencent.mobileqq.setting.processor.g p=(com.tencent.mobileqq.setting.processor.g)((Section)result.get(1)).items.get(0);expect(p.callback.equals(p.callback),"equals");expect(!p.callback.equals(null),"null equals");expect(p.callback.hashCode()==System.identityHashCode(p.callback),"hashCode");expect("QQSlimClick".equals(p.callback.toString()),"toString");expect(p.callback.invoke()==kotlin.Unit.INSTANCE,"invoke result");});
++        test("settings-null-empty",()->{expect(decorate(null,context)==null,"null");List<?> empty=Collections.emptyList();expect(decorate(empty,context)==empty,"empty");});
++        System.out.println("RESULT passed="+passed+" failed="+failed);
++        if(failed!=0)throw new AssertionError("Regression failures="+failed);
++    }
++}
+--- /dev/null
++++ b/tests/ui/AndroidManifest.xml
+@@ -0,0 +1,8 @@
++<?xml version="1.0" encoding="utf-8"?>
++<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="local.qqslim.test" android:versionCode="1" android:versionName="test">
++    <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="35" />
++    <application android:label="QQSlim UI fixtures" android:debuggable="true" android:theme="@android:style/Theme.Material.Light.NoActionBar">
++        <activity android:name="local.qqslim.module.UiHarnessActivity" android:exported="true" />
++    </application>
++    <instrumentation android:name="local.qqslim.module.UiInstrumentation" android:targetPackage="local.qqslim.test" />
++</manifest>
+--- /dev/null
++++ b/tests/ui/UiHarnessActivity.java
+@@ -0,0 +1,7 @@
++package local.qqslim.module;
++import android.app.Activity;
++import android.os.Bundle;
++import android.widget.TextView;
++public final class UiHarnessActivity extends Activity {
++    @Override public void onCreate(Bundle state){super.onCreate(state);TextView view=new TextView(this);view.setText("UI test fixture");setContentView(view);}
++}
+--- /dev/null
++++ b/tests/ui/UiInstrumentation.java
+@@ -0,0 +1,71 @@
++package local.qqslim.module;
++
++import android.app.Activity;
++import android.app.AlertDialog;
++import android.app.Dialog;
++import android.app.Instrumentation;
++import android.content.Intent;
++import android.os.Bundle;
++import android.view.View;
++import android.view.ViewGroup;
++import android.widget.ListView;
++import android.widget.TextView;
++import java.io.File;
++import java.lang.reflect.Constructor;
++import java.lang.reflect.Field;
++import java.lang.reflect.Method;
++import java.nio.file.Files;
++import java.util.List;
++import java.util.Map;
++import java.util.concurrent.atomic.AtomicReference;
++
++public final class UiInstrumentation extends Instrumentation {
++    private Bundle arguments;
++    private int checks;
++    private StringBuilder transcript=new StringBuilder();
++    @Override public void onCreate(Bundle args){arguments=args;start();}
++    private void expect(boolean ok,String name){if(!ok)throw new AssertionError(name);checks++;transcript.append("PASS ").append(name).append('\n');}
++    private static Object field(Object owner,String name){try{Field f=owner.getClass().getDeclaredField(name);f.setAccessible(true);return f.get(owner);}catch(Exception e){throw new RuntimeException(e);}}
++    private static void call(Object owner,String name){try{Method m=owner.getClass().getDeclaredMethod(name);m.setAccessible(true);m.invoke(owner);}catch(Exception e){throw new RuntimeException(e);}}
++    private void main(Runnable runnable){AtomicReference<Throwable> error=new AtomicReference<>();runOnMainSync(()->{try{runnable.run();}catch(Throwable e){error.set(e);}});if(error.get()!=null)throw new RuntimeException(error.get());}
++    private static View text(View view,String value){if(view instanceof TextView&&value.contentEquals(((TextView)view).getText()))return view;if(view instanceof ViewGroup)for(int i=0;i<((ViewGroup)view).getChildCount();i++){View found=text(((ViewGroup)view).getChildAt(i),value);if(found!=null)return found;}return null;}
++    private static ListView list(View view){if(view instanceof ListView)return (ListView)view;if(view instanceof ViewGroup)for(int i=0;i<((ViewGroup)view).getChildCount();i++){ListView found=list(((ViewGroup)view).getChildAt(i));if(found!=null)return found;}return null;}
++
++    @Override public void onStart(){
++        Bundle result=new Bundle();Activity activity=null;
++        try{
++            Intent intent=new Intent(getTargetContext(),UiHarnessActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
++            activity=startActivitySync(intent);final Activity owner=activity;
++            File fixture=new File(owner.getCacheDir(),"ui-fixture");Files.write(fixture.toPath(),new byte[41]);
++            Class<?> type=Class.forName("local.qqslim.module.SlimUi$Session");Constructor<?> ctor=type.getDeclaredConstructor(Activity.class,String.class);ctor.setAccessible(true);
++            AtomicReference<Object> reference=new AtomicReference<>();
++            main(()->{try{reference.set(ctor.newInstance(owner,owner.getApplicationInfo().dataDir));call(reference.get(),"show");}catch(Exception e){throw new RuntimeException(e);}});
++            Object session=reference.get();Dialog dialog=(Dialog)field(session,"dialog");
++            for(int i=0;i<100;i++){
++                AtomicReference<Integer> rows=new AtomicReference<>(0);main(()->rows.set(((List<?>)field(session,"items")).size()));
++                if(rows.get()>0)break;Thread.sleep(100);
++            }
++            main(()->{
++                expect(dialog.isShowing(),"page-shown");
++                ListView list=list(dialog.getWindow().getDecorView());expect(list!=null&&list.getAdapter().getCount()>=68,"scan-published");
++                @SuppressWarnings("unchecked") List<SlimCatalog.Item> items=(List<SlimCatalog.Item>)field(session,"items");
++                int readonly=0,errors=0;for(int i=0;i<items.size();i++){View row=list.getAdapter().getView(i,null,list);if(text(row,"仅查看")!=null)readonly++;if(items.get(i).error!=null)errors++;}
++                expect(readonly>=14,"important-data-readonly");expect(errors==0,"real-android-roots-scanned");
++                expect(list.getDividerHeight()==2,"two-physical-pixel-gap");
++                ViewGroup content=dialog.findViewById(android.R.id.content);View root=content.getChildAt(0);expect(root.getPaddingTop()>0&&root.getPaddingBottom()>0,"system-bar-insets");
++                Object palette=field(session,"palette");expect(((Boolean)field(palette,"dark"))==Boolean.parseBoolean(arguments.getString("dark","false")),"requested-theme");
++                SlimUi.show(new android.view.ContextThemeWrapper(owner,android.R.style.Theme_Material),owner.getApplicationInfo().dataDir);
++                try{Field f=SlimUi.class.getDeclaredField("OPEN");f.setAccessible(true);expect(((Map<?,?>)f.get(null)).size()==1,"duplicate-open-suppressed");}catch(Exception e){throw new RuntimeException(e);}
++                int index=-1;for(int i=0;i<items.size();i++)if("G/cache".equals(items.get(i).template))index=i;
++                expect(index>=0,"cache-row-present");View row=list.getAdapter().getView(index,null,list);View clean=text(row,"清理");expect(clean!=null&&clean.isEnabled(),"clean-button-enabled");clean.performClick();
++                AlertDialog confirmation=(AlertDialog)field(session,"confirmation");expect(confirmation!=null&&confirmation.isShowing(),"confirmation-required");
++                confirmation.getButton(AlertDialog.BUTTON_POSITIVE).performClick();
++            });
++            for(int i=0;i<100&&fixture.exists();i++)Thread.sleep(100);
++            main(()->{expect(!fixture.exists()&&owner.getCacheDir().isDirectory(),"confirmed-clean-preserves-directory");owner.finish();});
++            for(int i=0;i<100;i++){AtomicReference<Boolean> destroyed=new AtomicReference<>(false);main(()->destroyed.set(owner.isDestroyed()));if(destroyed.get())break;Thread.sleep(100);}
++            main(()->{expect(!dialog.isShowing(),"activity-destroy-dismisses-page");expect(!((Boolean)field(session,"registered")),"lifecycle-listener-unregistered");});
++            result.putString("stream",transcript+"RESULT ui_passed="+checks+" failed=0\n");finish(Activity.RESULT_OK,result);
++        }catch(Throwable e){if(activity!=null){final Activity owner=activity;runOnMainSync(owner::finish);}result.putString("stream",transcript+"FAIL "+e+"\n");finish(Activity.RESULT_CANCELED,result);}
++    }
++}

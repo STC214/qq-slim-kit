@@ -17,7 +17,10 @@ public final class SlimEntry implements IXposedHookLoadPackage {
         String instance=p.appInfo.uid+"|"+p.appInfo.dataDir+"|"+p.processName;
         if(!INSTALLED.add(instance))return;
         try{
-            SettingsInjector.install(p.classLoader,instance,p.appInfo.dataDir);
+            if(SettingsInjector.install(p.classLoader,instance,p.appInfo.dataDir)==0){
+                INSTALLED.remove(instance);
+                Log.w(TAG,"No compatible settings provider; entry inactive");return;
+            }
             Log.i(TAG,"standalone loaded; instance="+instance+"; user="+(android.os.Process.myUid()/100000)+"; presets=69");
         }catch(Throwable t){
             INSTALLED.remove(instance);

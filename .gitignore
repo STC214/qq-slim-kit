@@ -1,0 +1,43 @@
+# Local SDK/tooling, signing material and machine configuration
+.local/
+.gradle/
+**/build/
+local.properties
+*.jks
+*.keystore
+*.keystore.lock
+keystore.properties
+.env
+.env.*
+!.env.example
+
+# IDE and operating-system files
+.idea/
+*.iml
+.vscode/
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# Generated packages, dependencies and transient output
+*.apk
+*.aab
+*.apksig
+*.idsig
+*.class
+*.dex
+*.jar
+*.log
+*.tmp
+*.new
+__pycache__/
+*.py[cod]
+
+# Unrelated local device helper
+/rollback-cx-network.ps1
+
+# Raw tool transcripts are local; the curated review report is kept in Git.
+/artifacts/review/*.txt
+/artifacts/review/*.json
+/artifacts/review/*.png
+/artifacts/review/*.xml

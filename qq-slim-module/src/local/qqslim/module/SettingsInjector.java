@@ -10,27 +10,32 @@ import java.lang.reflect.Proxy;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Set;
-import java.util.WeakHashMap;
 
 final class SettingsInjector {
     private static final int ENTRY_ID=0x51534c49;
-    private static final Set<Object> DECORATED=Collections.newSetFromMap(new WeakHashMap<Object,Boolean>());
-    static void install(final ClassLoader host,final String instance,final String dataDir){
+    private static final List<java.lang.ref.WeakReference<Object>> DECORATED=new ArrayList<>();
+    private static boolean decorated(Object value){
+        synchronized(DECORATED){
+            java.util.Iterator<java.lang.ref.WeakReference<Object>> it=DECORATED.iterator();
+            while(it.hasNext()){Object x=it.next().get();if(x==null)it.remove();else if(x==value)return true;}
+            return false;
+        }
+    }
+    static int install(final ClassLoader host,final String instance,final String dataDir){
         int count=0;
         for(String name:new String[]{"com.tencent.mobileqq.setting.main.MainSettingConfigProvider","com.tencent.mobileqq.setting.main.NewSettingConfigProvider","com.tencent.mobileqq.setting.main.b"}){
             try{
                 Class<?> type=Class.forName(name,false,host);
                 for(Method method:type.getDeclaredMethods()){
                     Class<?>[] a=method.getParameterTypes();
-                    if(List.class.isAssignableFrom(method.getReturnType())&&a.length==1&&Context.class.isAssignableFrom(a[0])){
+                    // Returning ArrayList is valid for List, not for arbitrary concrete subtypes.
+                    if(method.getReturnType()==List.class&&a.length==1&&Context.class.isAssignableFrom(a[0])){
                         method.setAccessible(true);
                         XposedBridge.hookMethod(method,new XC_MethodHook(60){
                             @Override protected void afterHookedMethod(MethodHookParam p){
-                                try{decorate((Context)p.args[0],p.getResult(),host,dataDir,name);}
+                                try{if(!p.hasThrowable())p.setResult(decorate((Context)p.args[0],p.getResult(),host,dataDir,name));}
                                 catch(Throwable t){Log.e(SlimEntry.TAG,"settings insertion failed; instance="+instance,t);}
                             }
                         });
@@ -40,14 +45,16 @@ final class SettingsInjector {
             }catch(ClassNotFoundException ignored){}catch(Throwable t){Log.e(SlimEntry.TAG,"provider hook failed: "+name,t);}
         }
         Log.i(SlimEntry.TAG,"settings providers hooked="+count+"; instance="+instance);
+        return count;
     }
 
     @SuppressWarnings({"rawtypes","unchecked"})
-    private static void decorate(final Context context,Object result,ClassLoader host,String dataDir,String providerName)throws Throwable{
-        if(!(result instanceof List))return;
-        List sections=(List)result;
-        if(sections.isEmpty())return;
-        synchronized(DECORATED){if(!DECORATED.add(result))return;}
+    private static Object decorate(final Context context,Object result,ClassLoader host,String dataDir,String providerName)throws Throwable{
+        if(!(result instanceof List))return result;
+        if(decorated(result))return result;
+        List sections=new ArrayList((List)result);
+        if(sections.isEmpty())return result;
+        for(Object section:sections)if(deepContains(section,Integer.valueOf(ENTRY_ID),5,new java.util.IdentityHashMap<Object,Boolean>()))return result;
         Class<?> base=null;
         for(String n:new String[]{"com.tencent.mobileqq.setting.main.processor.AccountSecurityItemProcessor","com.tencent.mobileqq.setting.main.processor.AboutItemProcessor"}){
             try{base=Class.forName(n,false,host).getSuperclass();break;}catch(ClassNotFoundException ignored){}
@@ -75,11 +82,11 @@ final class SettingsInjector {
         Object processor=five?ctor.newInstance(context,ENTRY_ID,"QQ瘦身",icon,null):ctor.newInstance(context,ENTRY_ID,"QQ瘦身",icon);
         final Class<?> function0=setter.getParameterTypes()[0];
         final Object unit=function0.getClassLoader().loadClass("kotlin.Unit").getField("INSTANCE").get(null);
-        Object callback=Proxy.newProxyInstance(host,new Class[]{function0},(proxy,m,args)->{
+        Object callback=Proxy.newProxyInstance(host,new Class<?>[]{function0},(proxy,m,args)->{
             if("invoke".equals(m.getName())){SlimUi.show(context,dataDir);return unit;}
             if("toString".equals(m.getName()))return "QQSlimClick";
             if("hashCode".equals(m.getName()))return System.identityHashCode(proxy);
-            if("equals".equals(m.getName()))return proxy==args[0];
+            if("equals".equals(m.getName()))return args!=null&&args.length==1&&proxy==args[0];
             return null;
         });
         setter.invoke(processor,callback);
@@ -96,13 +103,16 @@ final class SettingsInjector {
         int qaReference=providerName.contains("NewSettingConfigProvider")?2:1;
         int insert=qa>=0?qa+1:Math.min(qaReference+1,sections.size());
         sections.add(insert,slimSection);
+        synchronized(DECORATED){DECORATED.add(new java.lang.ref.WeakReference<Object>(sections));}
         Log.i(SlimEntry.TAG,"QQ瘦身 entry inserted; placement=section["+insert+"]; qaSection="+qa+"; provider="+providerName+"; uid="+android.os.Process.myUid()+"; user="+(android.os.Process.myUid()/100000)+"; dataDir="+dataDir);
+        return sections;
     }
 
-    private static boolean deepContains(Object value,String needle,int depth,java.util.IdentityHashMap<Object,Boolean> seen){
-        if(value==null||depth<0||seen.put(value,Boolean.TRUE)!=null)return false;
-        if(value instanceof CharSequence)return value.toString().contains(needle);
-        if(value instanceof Iterable){for(Object x:(Iterable<?>)value)if(deepContains(x,needle,depth-1,seen))return true;return false;}
+    private static boolean deepContains(Object value,Object needle,int depth,java.util.IdentityHashMap<Object,Boolean> seen){
+        if(value==null||depth<0||seen.size()>=512||seen.put(value,Boolean.TRUE)!=null)return false;
+        if(needle instanceof Integer&&needle.equals(value))return true;
+        if(value instanceof CharSequence)return needle instanceof String&&value.toString().contains((String)needle);
+        if(value instanceof Iterable){int count=0;for(Object x:(Iterable<?>)value){if(++count>512)break;if(deepContains(x,needle,depth-1,seen))return true;}return false;}
         Class<?> c=value.getClass();if(c.isPrimitive()||c.isEnum()||c.getName().startsWith("java.lang."))return false;
         for(Class<?> k=c;k!=null&&k!=Object.class;k=k.getSuperclass())for(Field f:k.getDeclaredFields()){
             if(Modifier.isStatic(f.getModifiers()))continue;
