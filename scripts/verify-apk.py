@@ -79,10 +79,7 @@ try:
     assert 'android.permission.INTERNET' not in badging
     if args.serial:
         adb = [Path(args.sdk) / 'platform-tools/adb.exe', '-s', args.serial]
-        installed = run([*adb, 'shell', 'dumpsys', 'package', 'local.qqslim.module'])
-        version = re.search(r'versionCode=(\d+)', installed)
-        if version is None or int(version.group(1)) <= 6:
-            assert 'Success' in run([*adb, 'install', '-r', '.local/review-v16-baseline/qq-slim-standalone-v1.5.apk'])
+        # Verify the selected release directly; archived APKs may have been cleaned.
         assert 'Success' in run([*adb, 'install', '-r', apk])
         for dark in (False, True):
             run([*adb, 'shell', 'cmd', 'uimode', 'night', 'yes' if dark else 'no'])
