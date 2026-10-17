@@ -13,7 +13,7 @@
 
 包验证命令：`python scripts/verify-apk.py`，exit 0，确认包名、versionName/versionCode、API 范围、签名、对齐、图标像素、Xposed 入口和作用域。
 
-旧、新 APK 使用相同证书；`classes.dex` 逐字节一致。本次未修改清理逻辑，未重复运行模拟器/QQ 注入测试。此前的模拟器检查见 `REVIEW-v1.6.md`，不等同于真实 QQ 适配证明。
+旧、新 APK 使用相同证书；`classes.dex` 逐字节一致。本次未修改清理逻辑，未重复运行模拟器/QQ 注入测试。此前的模拟器检查保留在 [Git 历史审查记录](https://github.com/STC214/qq-slim-kit/blob/0360e7007f24315c813961674f3377cdc11362ed/artifacts/review/REVIEW-v1.6.md)，不等同于真实 QQ 适配证明；旧版本本地交付文件已清理。
 
 源码版本补丁已实际应用于隔离副本；隔离回滚输出：`version_rollback=OK; versionName=1.6-reviewed; versionCode=7; git_and_devices=untouched`。原始 argv、stdout、stderr、退出码保存在同目录的 `version-1.6.0-build.json`、`version-1.6.0-validation.json`、`package-verification-v1.6.0.json`，本地保留、Git 忽略。
 

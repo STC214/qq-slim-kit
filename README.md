@@ -77,7 +77,8 @@ python scripts/test-ui.py --serial emulator-5580
 - 首次构建从 Xposed 官方仓库获取 API 82 编译依赖，并核对 SHA-256；依赖仅参与编译，不打入模块 APK。
 - 本地开发签名保存在 `.local/debug.keystore`，请自行备份。与本次 v1.5 签名相同，与早期 v1.4 签名不同；签名不同的安装包不能直接覆盖升级。
 - 源码、图标资源、测试与脚本纳入版本管理；SDK、密钥、构建缓存、APK 和原始测试日志由 `.gitignore` 排除。忽略规则不删除磁盘文件。
-- 本轮审查记录：`artifacts/review/REVIEW-v1.6.md`。Android 模拟器测试不代表特定 QQ/LSPosed 版本已适配，实机入口和双开隔离仍应单独验收。
+- 当前版本记录：[VERSION-v1.6.0.md](artifacts/review/VERSION-v1.6.0.md)。Android 模拟器测试不代表特定 QQ/LSPosed 版本已适配，实机入口和双开隔离仍应单独验收。
+- 本地交付目录只保留当前版本；旧版补丁、验证记录和回滚文件随旧 APK 一并清理，历史内容可从 Git 提交查询。
 
 ## 版本约定
 
