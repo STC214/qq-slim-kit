@@ -1,5 +1,7 @@
 # QQ瘦身独立模块
 
+**QQ Slim Kit · v1.6.0** · [更新日志](CHANGELOG.md)
+
 一个面向 Android QQ 的独立 Xposed 缓存清理模块。
 
 ## 功能
@@ -55,7 +57,7 @@
 ## 构建信息
 
 - 包名：`local.qqslim.module`
-- 当前版本：`1.6-reviewed`（versionCode 7）
+- 当前版本：`1.6.0`（versionCode 8，Git 标签 `v1.6.0`）
 - 最低 Android 版本：Android 9（API 28）
 - 默认作用域：`com.tencent.mobileqq`
 
@@ -71,11 +73,18 @@ python scripts/test.py --serial emulator-5580
 python scripts/test-ui.py --serial emulator-5580
 ```
 
-- 默认 APK：`artifacts/qq-slim-standalone-v1.6.apk`。
+- 默认 APK：`artifacts/qq-slim-kit-v1.6.0.apk`，文件名自动读取 Manifest 中的版本号。
 - 首次构建从 Xposed 官方仓库获取 API 82 编译依赖，并核对 SHA-256；依赖仅参与编译，不打入模块 APK。
 - 本地开发签名保存在 `.local/debug.keystore`，请自行备份。与本次 v1.5 签名相同，与早期 v1.4 签名不同；签名不同的安装包不能直接覆盖升级。
 - 源码、图标资源、测试与脚本纳入版本管理；SDK、密钥、构建缓存、APK 和原始测试日志由 `.gitignore` 排除。忽略规则不删除磁盘文件。
 - 本轮审查记录：`artifacts/review/REVIEW-v1.6.md`。Android 模拟器测试不代表特定 QQ/LSPosed 版本已适配，实机入口和双开隔离仍应单独验收。
+
+## 版本约定
+
+- 公开版本使用 `主版本.次版本.修订号`，如 `1.6.0`；Git 标签增加 `v` 前缀。
+- 不兼容的大调整增加主版本；兼容的新功能增加次版本；修复增加修订号。
+- 每次发布都递增 Android `versionCode`，不因版本命名调整而降低；桌面页面和打包文件名均读取 Manifest。
+- `1.6-reviewed` 是先前的内部构建标识，正式版本从 `1.6.0` 延续现有编号，不重置升级序号。
 
 ## 致谢
 

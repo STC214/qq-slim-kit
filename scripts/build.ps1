@@ -1,7 +1,7 @@
 param(
     [string]$Sdk = $env:ANDROID_HOME,
     [string]$Source = "qq-slim-module",
-    [string]$Output = "artifacts/qq-slim-standalone-v1.6.apk",
+    [string]$Output = "",
     [string]$XposedApi = ".local/xposed-api-82.jar",
     [string]$Keystore = ".local/debug.keystore"
 )
@@ -14,6 +14,12 @@ try {
     if (!$Sdk) { $Sdk = Join-Path $env:LOCALAPPDATA 'Android/Sdk' }
     $bt = Join-Path $Sdk "build-tools/35.0.0"
     $android = Join-Path $Sdk "platforms/android-35/android.jar"
+    if (!$Output) {
+        [xml]$manifest=Get-Content -LiteralPath "$Source/AndroidManifest.xml" -Raw -Encoding UTF8
+        $version=$manifest.manifest.GetAttribute('versionName','http://schemas.android.com/apk/res/android')
+        if ($version -notmatch '^[0-9A-Za-z][0-9A-Za-z._-]*$') { throw 'Invalid versionName' }
+        $Output="artifacts/qq-slim-kit-v$version.apk"
+    }
     if (!(Test-Path -LiteralPath $XposedApi)) {
         New-Item -ItemType Directory -Force (Split-Path $XposedApi -Parent) | Out-Null
         Invoke-WebRequest -UseBasicParsing -Uri 'https://api.xposed.info/de/robv/android/xposed/api/82/api-82.jar' -OutFile $XposedApi

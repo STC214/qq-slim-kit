@@ -1,0 +1,164 @@
+--- a/qq-slim-module/AndroidManifest.xml
++++ b/qq-slim-module/AndroidManifest.xml
+@@ -1,6 +1,6 @@
+ <?xml version="1.0" encoding="utf-8"?>
+ <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+-    package="local.qqslim.module" android:versionCode="7" android:versionName="1.6-reviewed">
++    package="local.qqslim.module" android:versionCode="8" android:versionName="1.6.0">
+     <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="35" />
+     <queries>
+         <package android:name="com.tencent.mobileqq" />
+--- a/README.md
++++ b/README.md
+@@ -1,4 +1,6 @@
+ # QQ瘦身独立模块
++
++**QQ Slim Kit · v1.6.0** · [更新日志](CHANGELOG.md)
+ 
+ 一个面向 Android QQ 的独立 Xposed 缓存清理模块。
+ 
+@@ -55,7 +57,7 @@
+ ## 构建信息
+ 
+ - 包名：`local.qqslim.module`
+-- 当前版本：`1.6-reviewed`（versionCode 7）
++- 当前版本：`1.6.0`（versionCode 8，Git 标签 `v1.6.0`）
+ - 最低 Android 版本：Android 9（API 28）
+ - 默认作用域：`com.tencent.mobileqq`
+ 
+@@ -71,11 +73,18 @@
+ python scripts/test-ui.py --serial emulator-5580
+ ```
+ 
+-- 默认 APK：`artifacts/qq-slim-standalone-v1.6.apk`。
++- 默认 APK：`artifacts/qq-slim-kit-v1.6.0.apk`，文件名自动读取 Manifest 中的版本号。
+ - 首次构建从 Xposed 官方仓库获取 API 82 编译依赖，并核对 SHA-256；依赖仅参与编译，不打入模块 APK。
+ - 本地开发签名保存在 `.local/debug.keystore`，请自行备份。与本次 v1.5 签名相同，与早期 v1.4 签名不同；签名不同的安装包不能直接覆盖升级。
+ - 源码、图标资源、测试与脚本纳入版本管理；SDK、密钥、构建缓存、APK 和原始测试日志由 `.gitignore` 排除。忽略规则不删除磁盘文件。
+ - 本轮审查记录：`artifacts/review/REVIEW-v1.6.md`。Android 模拟器测试不代表特定 QQ/LSPosed 版本已适配，实机入口和双开隔离仍应单独验收。
++
++## 版本约定
++
++- 公开版本使用 `主版本.次版本.修订号`，如 `1.6.0`；Git 标签增加 `v` 前缀。
++- 不兼容的大调整增加主版本；兼容的新功能增加次版本；修复增加修订号。
++- 每次发布都递增 Android `versionCode`，不因版本命名调整而降低；桌面页面和打包文件名均读取 Manifest。
++- `1.6-reviewed` 是先前的内部构建标识，正式版本从 `1.6.0` 延续现有编号，不重置升级序号。
+ 
+ ## 致谢
+ 
+--- a/qq-slim-module/README.md
++++ b/qq-slim-module/README.md
+@@ -4,7 +4,7 @@
+ - Xposed 入口：`local.qqslim.module.SlimEntry`
+ - 默认作用域：`com.tencent.mobileqq`
+ - 功能入口：QQ 设置列表顶部的“QQ瘦身”
+-- 当前版本：1.6-reviewed（versionCode 7），保留替换后的多密度与自适应图标。
++- 当前版本：1.6.0（versionCode 8，Git 标签 v1.6.0），保留替换后的多密度与自适应图标。
+ - 功能页面：69 项规则、重复路径合并、异步容量扫描、容量排序、逐项确认清理，重要数据仅查看。
+ - 双开隔离：每个 QQ 进程使用自己的 UID、`ApplicationInfo.dataDir` 和用户外部存储根目录。此设计仍需目标实机验收。
+ - 清理保留所选目录、检查底层规则，并使用相对目录句柄与 NOFOLLOW 遍历；清理中断可能留下部分已删除数据。
+--- a/scripts/build.ps1
++++ b/scripts/build.ps1
+@@ -1,7 +1,7 @@
+ param(
+     [string]$Sdk = $env:ANDROID_HOME,
+     [string]$Source = "qq-slim-module",
+-    [string]$Output = "artifacts/qq-slim-standalone-v1.6.apk",
++    [string]$Output = "",
+     [string]$XposedApi = ".local/xposed-api-82.jar",
+     [string]$Keystore = ".local/debug.keystore"
+ )
+@@ -14,6 +14,12 @@
+     if (!$Sdk) { $Sdk = Join-Path $env:LOCALAPPDATA 'Android/Sdk' }
+     $bt = Join-Path $Sdk "build-tools/35.0.0"
+     $android = Join-Path $Sdk "platforms/android-35/android.jar"
++    if (!$Output) {
++        [xml]$manifest=Get-Content -LiteralPath "$Source/AndroidManifest.xml" -Raw -Encoding UTF8
++        $version=$manifest.manifest.GetAttribute('versionName','http://schemas.android.com/apk/res/android')
++        if ($version -notmatch '^[0-9A-Za-z][0-9A-Za-z._-]*$') { throw 'Invalid versionName' }
++        $Output="artifacts/qq-slim-kit-v$version.apk"
++    }
+     if (!(Test-Path -LiteralPath $XposedApi)) {
+         New-Item -ItemType Directory -Force (Split-Path $XposedApi -Parent) | Out-Null
+         Invoke-WebRequest -UseBasicParsing -Uri 'https://api.xposed.info/de/robv/android/xposed/api/82/api-82.jar' -OutFile $XposedApi
+--- a/scripts/verify-apk.py
++++ b/scripts/verify-apk.py
+@@ -10,19 +10,25 @@
+ import sys
+ import zipfile
+ import re
++import xml.etree.ElementTree as ET
+ from PIL import Image
+ 
+ sys.stdout.reconfigure(encoding='utf-8', errors='backslashreplace')
+ root = Path(__file__).resolve().parent.parent
+ os.chdir(root)
+ p = argparse.ArgumentParser()
+-p.add_argument('--apk', default='artifacts/qq-slim-standalone-v1.6.apk')
++p.add_argument('--apk')
+ p.add_argument('--sdk', default=os.environ.get('ANDROID_HOME'))
+ p.add_argument('--serial')
+ args = p.parse_args()
+ if args.serial and not args.serial.startswith('emulator-'):
+     p.error('Launcher checks only install to an explicit emulator.')
+-apk = Path(args.apk)
++manifest=ET.parse('qq-slim-module/AndroidManifest.xml').getroot()
++namespace='{http://schemas.android.com/apk/res/android}'
++version_name=manifest.attrib[namespace+'versionName']
++version_code=int(manifest.attrib[namespace+'versionCode'])
++assert version_code>0 and re.fullmatch(r'[0-9A-Za-z][0-9A-Za-z._-]*',version_name), 'Invalid version'
++apk = Path(args.apk or f'artifacts/qq-slim-kit-v{version_name}.apk')
+ bt = Path(args.sdk) / 'build-tools/35.0.0'
+ records = []
+ 
+@@ -68,7 +74,7 @@
+     assert 'e4957288c9c19ee83a4b6eb25a57072b0857c48f62f3bb2b695abacb468af51e' in signed, 'v1.5 signing identity changed'
+     run([bt / 'zipalign.exe', '-c', '-v', '4', apk])
+     badging = run([bt / 'aapt.exe', 'dump', 'badging', apk])
+-    assert "name='local.qqslim.module' versionCode='7' versionName='1.6-reviewed'" in badging
++    assert f"name='local.qqslim.module' versionCode='{version_code}' versionName='{version_name}'" in badging
+     assert "sdkVersion:'28'" in badging and "targetSdkVersion:'35'" in badging
+     assert 'android.permission.INTERNET' not in badging
+     if args.serial:
+@@ -85,14 +91,15 @@
+             remote = '/data/local/tmp/qqslim-release-ui.xml'
+             run([*adb, 'shell', 'uiautomator', 'dump', remote])
+             xml = run([*adb, 'shell', 'cat', remote])
+-            assert 'v1.6-reviewed' in xml and 'QQ瘦身独立模块' in xml
++            assert 'v'+version_name in xml and 'QQ瘦身独立模块' in xml
+             run([*adb, 'shell', 'rm', remote])
+         run([*adb, 'shell', 'cmd', 'uimode', 'night', 'no'])
+         crash = run([*adb, 'logcat', '-b', 'crash', '-d'])
+         assert 'Process: local.qqslim.module,' not in crash, 'Module crash recorded'
+     summary = dict(apk=str(apk.resolve()), sha256=hashlib.sha256(apk.read_bytes()).hexdigest(),
++                   version_name=version_name, version_code=version_code,
+                    bytes=apk.stat().st_size, icon_png_count=len(icons), class_count=len(classes),
+                    signature='v3 verified; same certificate as v1.5', launcher='light/dark passed' if args.serial else 'not run')
+     print(json.dumps(summary, ensure_ascii=False, indent=2))
+ finally:
+-    Path('artifacts/review/package-verification.json').write_text(json.dumps(records, ensure_ascii=False, indent=2), encoding='utf-8')
++    Path(f'artifacts/review/package-verification-v{version_name}.json').write_text(json.dumps(records, ensure_ascii=False, indent=2), encoding='utf-8')
+--- /dev/null
++++ b/CHANGELOG.md
+@@ -0,0 +1,21 @@
++# 更新日志
++
++## [1.6.0] - 2026-10-17
++
++首次使用正式三段式版本号发布，延续内部版本 `1.6-reviewed`。
++
++### 版本管理
++
++- 版本名统一为 `1.6.0`，Android versionCode 递增至 `8`。
++- Git 标签：`v1.6.0`。
++- APK 文件名自动读取 Manifest 版本：`qq-slim-kit-v1.6.0.apk`。
++- 版本校验脚本自动读取 Manifest，桌面页面继续展示包内版本号。
++
++### 已有功能
++
++- QQ 设置中的独立缓存清理入口及 69 项目录规则。
++- 异步扫描、容量排序、逐项确认清理和重要目录只读保护。
++- 多密度、自适应应用图标及亮暗主题界面。
++- 清理路径保护、生命周期管理及回归测试工具。
++
++本次发布不新增清理规则或改变清理行为。此前模拟器验证详见审查报告；真实 QQ/LSPosed 与双开适配仍需实机验收。

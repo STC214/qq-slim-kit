@@ -10,19 +10,25 @@ import subprocess
 import sys
 import zipfile
 import re
+import xml.etree.ElementTree as ET
 from PIL import Image
 
 sys.stdout.reconfigure(encoding='utf-8', errors='backslashreplace')
 root = Path(__file__).resolve().parent.parent
 os.chdir(root)
 p = argparse.ArgumentParser()
-p.add_argument('--apk', default='artifacts/qq-slim-standalone-v1.6.apk')
+p.add_argument('--apk')
 p.add_argument('--sdk', default=os.environ.get('ANDROID_HOME'))
 p.add_argument('--serial')
 args = p.parse_args()
 if args.serial and not args.serial.startswith('emulator-'):
     p.error('Launcher checks only install to an explicit emulator.')
-apk = Path(args.apk)
+manifest=ET.parse('qq-slim-module/AndroidManifest.xml').getroot()
+namespace='{http://schemas.android.com/apk/res/android}'
+version_name=manifest.attrib[namespace+'versionName']
+version_code=int(manifest.attrib[namespace+'versionCode'])
+assert version_code>0 and re.fullmatch(r'[0-9A-Za-z][0-9A-Za-z._-]*',version_name), 'Invalid version'
+apk = Path(args.apk or f'artifacts/qq-slim-kit-v{version_name}.apk')
 bt = Path(args.sdk) / 'build-tools/35.0.0'
 records = []
 
@@ -68,7 +74,7 @@ try:
     assert 'e4957288c9c19ee83a4b6eb25a57072b0857c48f62f3bb2b695abacb468af51e' in signed, 'v1.5 signing identity changed'
     run([bt / 'zipalign.exe', '-c', '-v', '4', apk])
     badging = run([bt / 'aapt.exe', 'dump', 'badging', apk])
-    assert "name='local.qqslim.module' versionCode='7' versionName='1.6-reviewed'" in badging
+    assert f"name='local.qqslim.module' versionCode='{version_code}' versionName='{version_name}'" in badging
     assert "sdkVersion:'28'" in badging and "targetSdkVersion:'35'" in badging
     assert 'android.permission.INTERNET' not in badging
     if args.serial:
@@ -85,14 +91,15 @@ try:
             remote = '/data/local/tmp/qqslim-release-ui.xml'
             run([*adb, 'shell', 'uiautomator', 'dump', remote])
             xml = run([*adb, 'shell', 'cat', remote])
-            assert 'v1.6-reviewed' in xml and 'QQ瘦身独立模块' in xml
+            assert 'v'+version_name in xml and 'QQ瘦身独立模块' in xml
             run([*adb, 'shell', 'rm', remote])
         run([*adb, 'shell', 'cmd', 'uimode', 'night', 'no'])
         crash = run([*adb, 'logcat', '-b', 'crash', '-d'])
         assert 'Process: local.qqslim.module,' not in crash, 'Module crash recorded'
     summary = dict(apk=str(apk.resolve()), sha256=hashlib.sha256(apk.read_bytes()).hexdigest(),
+                   version_name=version_name, version_code=version_code,
                    bytes=apk.stat().st_size, icon_png_count=len(icons), class_count=len(classes),
                    signature='v3 verified; same certificate as v1.5', launcher='light/dark passed' if args.serial else 'not run')
     print(json.dumps(summary, ensure_ascii=False, indent=2))
 finally:
-    Path('artifacts/review/package-verification.json').write_text(json.dumps(records, ensure_ascii=False, indent=2), encoding='utf-8')
+    Path(f'artifacts/review/package-verification-v{version_name}.json').write_text(json.dumps(records, ensure_ascii=False, indent=2), encoding='utf-8')
